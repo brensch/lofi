@@ -1,0 +1,159 @@
+syntax = "proto3";
+
+package lofi.v1;
+
+// Source-of-truth schema for device-to-device messages.
+// The firmware may use a compact no-alloc encoder for hot paths, but field
+// numbers and semantics should stay compatible with this schema.
+
+message Envelope {
+  uint32 schema_version = 1;
+  uint64 sender_id = 2;
+  uint32 sequence = 3;
+  int64 sender_local_time_us = 4;
+  oneof payload {
+    Hello hello = 10;
+    TimeProbeRequest time_probe_request = 11;
+    TimeProbeResponse time_probe_response = 12;
+    TimeBeacon time_beacon = 13;
+    TransportState transport_state = 14;
+    ScheduledEvent scheduled_event = 15;
+    GrooveState groove_state = 16;
+    RoleMap role_map = 17;
+  }
+}
+
+message Hello {
+  string firmware_version = 1;
+  HardwareProfile hardware = 2;
+  uint32 capabilities = 3;
+}
+
+message HardwareProfile {
+  string board = 1;
+  string chip = 2;
+  string dac = 3;
+  string display = 4;
+  bool has_speaker = 5;
+}
+
+message TimeProbeRequest {
+  uint64 exchange_id = 1;
+  uint64 target_id = 2;
+  int64 requester_send_local_us = 3;
+}
+
+message TimeProbeResponse {
+  uint64 exchange_id = 1;
+  uint64 requester_id = 2;
+  int64 requester_send_local_us = 3;
+  int64 responder_recv_local_us = 4;
+  int64 responder_send_local_us = 5;
+  uint32 responder_quality_ppm = 6;
+}
+
+message TimeBeacon {
+  // A node's current estimate of the shared mesh epoch.
+  uint64 epoch_id = 1;
+  int64 mesh_time_us = 2;
+  sint64 clock_offset_us = 3;
+  sint32 clock_rate_ppb = 4;
+  uint32 uncertainty_us = 5;
+  uint32 peer_count = 6;
+  uint32 quality_score = 7;
+}
+
+message TransportState {
+  uint64 transport_id = 1;
+  bool playing = 2;
+  int64 song_zero_mesh_time_us = 3;
+  uint32 bpm_milli = 4;
+  uint32 ticks_per_beat = 5;
+}
+
+message ScheduledEvent {
+  uint64 event_id = 1;
+  int64 fire_at_tick = 2;
+  ScheduledAction action = 3;
+  uint64 dedupe_key = 4;
+}
+
+message ScheduledAction {
+  oneof action {
+    SetTransport set_transport = 1;
+    SetSection set_section = 2;
+    SetGrooveSeed set_groove_seed = 3;
+    CallResponse call_response = 4;
+    SetGrooveMode set_groove_mode = 5;
+  }
+}
+
+message SetTransport {
+  TransportState state = 1;
+}
+
+message SetSection {
+  Section section = 1;
+}
+
+message SetGrooveSeed {
+  uint64 seed = 1;
+  uint32 generation = 2;
+}
+
+message CallResponse {
+  uint64 call_id = 1;
+  uint64 source_node_id = 2;
+  uint32 source_phrase = 3;
+  uint32 response_phrase = 4;
+  int32 response_after_bars = 5;
+}
+
+message SetGrooveMode {
+  GrooveMode mode = 1;
+}
+
+message GrooveState {
+  uint64 seed = 1;
+  GrooveMode mode = 2;
+  Section section = 3;
+  uint32 density_milli = 4;
+  uint32 swing_milli = 5;
+  uint32 variation = 6;
+}
+
+message RoleMap {
+  repeated DeviceRole roles = 1;
+}
+
+message DeviceRole {
+  uint64 node_id = 1;
+  VoiceRole role = 2;
+  uint32 channel = 3;
+}
+
+enum Section {
+  SECTION_UNSPECIFIED = 0;
+  SECTION_INTRO = 1;
+  SECTION_GROOVE = 2;
+  SECTION_DROP = 3;
+  SECTION_BREAKDOWN = 4;
+}
+
+enum GrooveMode {
+  GROOVE_MODE_UNSPECIFIED = 0;
+  GROOVE_MODE_DUSTY_TAPE = 1;
+  GROOVE_MODE_JAZZ_HOP = 2;
+  GROOVE_MODE_AMBIENT_STUDY = 3;
+  GROOVE_MODE_DRUM_ONLY = 4;
+}
+
+enum VoiceRole {
+  VOICE_ROLE_UNSPECIFIED = 0;
+  VOICE_ROLE_DRUMS = 1;
+  VOICE_ROLE_BASS = 2;
+  VOICE_ROLE_CHORDS = 3;
+  VOICE_ROLE_MELODY = 4;
+  VOICE_ROLE_TEXTURE = 5;
+  VOICE_ROLE_FX = 6;
+}

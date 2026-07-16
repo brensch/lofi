@@ -37,10 +37,35 @@ impl Sample {
 /// Render one linearly interpolated sample `age` seconds after its onset.
 #[inline]
 pub fn render_sample(sample: &Sample, age: f32) -> f32 {
+    render_sample_pitched(sample, age, 1.0)
+}
+
+/// Render a sample at a playback-rate ratio. Values above one transpose upward
+/// and shorten the sample; values below one transpose downward. This is the
+/// tonal voice path: pitch changes sample playback, never an oscillator.
+#[inline]
+pub fn render_sample_pitched(sample: &Sample, age: f32, rate_ratio: f32) -> f32 {
     if age < 0.0 || sample.data.is_empty() {
         return 0.0;
     }
-    let position = age * sample.sample_rate as f32;
+    let position = age * sample.sample_rate as f32 * rate_ratio.max(0.01);
+    render_position(sample, position)
+}
+
+/// Render a continuously looping sample. Loop clips are used only when their
+/// tagged BPM and harmonic phase match the active scene.
+#[inline]
+pub fn render_sample_looped(sample: &Sample, age: f32, rate_ratio: f32) -> f32 {
+    if age < 0.0 || sample.data.is_empty() {
+        return 0.0;
+    }
+    let position =
+        (age * sample.sample_rate as f32 * rate_ratio.max(0.01)) % sample.data.len() as f32;
+    render_position(sample, position)
+}
+
+#[inline]
+fn render_position(sample: &Sample, position: f32) -> f32 {
     let index = position as usize;
     let Some(&a) = sample.data.get(index) else {
         return 0.0;
@@ -85,6 +110,26 @@ mod tests {
         assert!(render_sample(&sample, 0.5).abs() > 0.4);
         assert!(render_sample(&sample, 0.25).abs() > 0.2);
         assert_eq!(render_sample(&sample, 2.0), 0.0);
+    }
+
+    #[test]
+    fn pitched_playback_advances_at_the_requested_ratio() {
+        static DATA: [u8; 4] = [0xff, 0x80, 0x00, 0xff];
+        let sample = Sample::mulaw(&DATA, 4, 1.0);
+        assert_eq!(
+            render_sample_pitched(&sample, 0.25, 2.0),
+            render_sample(&sample, 0.5)
+        );
+    }
+
+    #[test]
+    fn looped_playback_wraps() {
+        static DATA: [u8; 4] = [0xff, 0x80, 0x00, 0xff];
+        let sample = Sample::mulaw(&DATA, 4, 1.0);
+        assert_eq!(
+            render_sample_looped(&sample, 1.25, 1.0),
+            render_sample_looped(&sample, 0.25, 1.0)
+        );
     }
 
     #[test]

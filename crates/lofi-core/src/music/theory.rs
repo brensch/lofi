@@ -86,13 +86,76 @@ impl Chord {
     pub fn voicing(self, center: i32) -> Voicing {
         let r = self.root as i32;
         let q = self.quality;
-        let notes = [
+        let mut notes = [
             place_near(r + q.third(), center),
             place_near(r + q.seventh(), center),
             place_near(r + q.extension(), center + 3),
             place_near(r + q.fifth(), center - 2),
         ];
+        notes.sort_unstable();
         Voicing { notes }
+    }
+
+    /// Find the closest non-crossing inversion to `previous`. This runs once per
+    /// audio block setup, never per sample, and keeps each of the four voices
+    /// moving independently instead of merely preserving their average pitch.
+    pub fn voicing_near(self, previous: &Voicing) -> Voicing {
+        const PERMUTATIONS: [[usize; 4]; 24] = [
+            [0, 1, 2, 3],
+            [0, 1, 3, 2],
+            [0, 2, 1, 3],
+            [0, 2, 3, 1],
+            [0, 3, 1, 2],
+            [0, 3, 2, 1],
+            [1, 0, 2, 3],
+            [1, 0, 3, 2],
+            [1, 2, 0, 3],
+            [1, 2, 3, 0],
+            [1, 3, 0, 2],
+            [1, 3, 2, 0],
+            [2, 0, 1, 3],
+            [2, 0, 3, 1],
+            [2, 1, 0, 3],
+            [2, 1, 3, 0],
+            [2, 3, 0, 1],
+            [2, 3, 1, 0],
+            [3, 0, 1, 2],
+            [3, 0, 2, 1],
+            [3, 1, 0, 2],
+            [3, 1, 2, 0],
+            [3, 2, 0, 1],
+            [3, 2, 1, 0],
+        ];
+        let q = self.quality;
+        let classes = [q.third(), q.fifth(), q.seventh(), q.extension()];
+        let mut best = self.voicing(Self::center_of(previous));
+        let mut best_cost = i32::MAX;
+
+        for permutation in PERMUTATIONS {
+            let notes = core::array::from_fn(|voice| {
+                place_near(
+                    self.root as i32 + classes[permutation[voice]],
+                    previous.notes[voice] as i32,
+                )
+            });
+            if notes.windows(2).any(|pair| pair[0] >= pair[1])
+                || notes.iter().any(|note| !(48..=84).contains(note))
+            {
+                continue;
+            }
+            let movement: i32 = notes
+                .iter()
+                .zip(previous.notes)
+                .map(|(note, old)| (*note as i32 - old as i32).abs())
+                .sum();
+            let span = notes[3] as i32 - notes[0] as i32;
+            let cost = movement + (span - 18).max(0) * 2;
+            if cost < best_cost {
+                best = Voicing { notes };
+                best_cost = cost;
+            }
+        }
+        best
     }
 
     /// Average of a voicing's notes, used as the next chord's target center.
@@ -156,5 +219,27 @@ mod tests {
         for n in v.notes {
             assert!((n as i32 - 64).abs() <= 9, "note {n} too far from center");
         }
+    }
+
+    #[test]
+    fn adjacent_voicing_preserves_voice_order() {
+        let first = Chord {
+            root: 55,
+            quality: ChordQuality::Maj9,
+        }
+        .voicing(64);
+        let second = Chord {
+            root: 60,
+            quality: ChordQuality::Maj7,
+        }
+        .voicing_near(&first);
+        assert!(second.notes.windows(2).all(|pair| pair[0] < pair[1]));
+        let movement: i32 = second
+            .notes
+            .iter()
+            .zip(first.notes)
+            .map(|(note, old)| (*note as i32 - old as i32).abs())
+            .sum();
+        assert!(movement <= 18, "voice movement was {movement} semitones");
     }
 }

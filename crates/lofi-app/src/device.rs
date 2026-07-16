@@ -3,7 +3,9 @@ use lofi_core::mesh::wire::MeshMessage;
 use lofi_core::mesh::{SyncEngine, SyncQuality};
 use lofi_core::music::arrangement::{Arrangement, Role, BARS_PER_PHRASE, ROLES};
 use lofi_core::music::kit::kit_for;
-use lofi_core::music::{color, render_role, BeatCtx, Lowpass};
+use lofi_core::music::{
+    color, render_role, signature_for, BeatCtx, Lowpass, PackedCatalog, AI_CATALOG,
+};
 use lofi_core::transport::Transport;
 use lofi_core::{Micros, NodeId};
 
@@ -54,6 +56,7 @@ pub struct Device {
     id: NodeId,
     voice: DeviceVoice,
     sample_rate: u32,
+    catalog: &'static PackedCatalog,
     engine: SyncEngine,
     transport: Transport,
     section: Section,
@@ -70,6 +73,7 @@ impl Device {
             id,
             voice,
             sample_rate: DEFAULT_SAMPLE_RATE,
+            catalog: &AI_CATALOG,
             engine: SyncEngine::new(id),
             transport,
             section: Section::Groove,
@@ -84,6 +88,13 @@ impl Device {
     pub fn with_sample_rate(mut self, sample_rate: u32) -> Self {
         self.sample_rate = sample_rate.max(1);
         self.lowpass = Lowpass::new(self.lowpass_cutoff_hz, self.sample_rate, 0.707);
+        self
+    }
+
+    /// Point playback at a catalogue in memory-mapped read-only flash.
+    pub fn with_catalog(mut self, catalog: &'static PackedCatalog) -> Self {
+        assert!(catalog.is_valid(), "invalid sample catalogue");
+        self.catalog = catalog;
         self
     }
 
@@ -166,7 +177,7 @@ impl Device {
 
         // Resolve the shared arrangement, this box's roles, and the vibe (kit)
         // once per block. The kit is chosen deterministically from the seed, so
-        // every box in the mesh renders the same instruments and tone.
+        // every box in the mesh selects the same content and tone profile.
         let roster = self.engine.roster(block_start_local_us);
         let phrase = self
             .transport
@@ -174,6 +185,7 @@ impl Device {
             .div_euclid(TICKS_PER_BAR * BARS_PER_PHRASE);
         let arrangement = Arrangement::at(self.seed, roster.ids(), phrase);
         let kit = kit_for(self.seed);
+        let signature = signature_for(self.seed);
         let mut roles = [false; ROLES.len()];
         for (j, role) in ROLES.iter().enumerate() {
             roles[j] = role.assigned_to(roster.my_index(), roster.len());
@@ -184,13 +196,14 @@ impl Device {
             self.sample_rate,
             arrangement.params,
             kit,
-        );
+        )
+        .with_catalog(self.catalog);
 
         // The vibe's master lowpass; retune the biquad only when the vibe changes.
-        self.retune_lowpass(kit.tone.cutoff_hz);
+        let mut tone = signature.blend_tone(kit.tone);
+        self.retune_lowpass(tone.cutoff_hz);
         // Blend the kit's baseline air with the arrangement's `dust` feature so
         // "Dusty" audibly lifts the crackle without swamping quieter vibes.
-        let mut tone = kit.tone;
         tone.air *= arrangement.params.dust as f32 * 0.5 + 0.4;
 
         let sr = self.sample_rate as Micros;

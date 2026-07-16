@@ -1,5 +1,5 @@
 //! Tape + vinyl "character": the shared, deterministic imperfection that turns a
-//! clean synth mix into a lofi record.
+//! clean sample mix into a lofi record.
 //!
 //! Everything here is a pure function of *mesh time* (never per-node state), so
 //! the wobble and crackle are identical on every box — the mesh drifts as one
@@ -7,13 +7,13 @@
 //! master lowpass, lives in `fx` because an IIR needs history; its cutoff comes
 //! from the kit's [`Tone`].
 
+use super::dsp::{fast_decay, noise, sin_turns};
 use super::kit::Tone;
-use super::patch::{fast_decay, noise, sin_turns};
 use crate::Micros;
 
 /// Tape pitch instability as a frequency multiplier around 1.0. A slow "wow"
 /// plus faster "flutter", each built from incommensurate partials so it never
-/// resolves into a clean vibrato. Multiply a voice's frequency by this.
+/// resolves into a clean vibrato. Multiply pitched sample playback rate by this.
 pub fn warble(mesh_us: Micros, tone: Tone) -> f32 {
     let t = mesh_us as f32 / 1_000_000.0;
     let wow = sin_turns(0.60 * t) * 0.6 + sin_turns(0.27 * t) * 0.4;

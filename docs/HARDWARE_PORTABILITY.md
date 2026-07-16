@@ -10,6 +10,13 @@ The first physical target is ESP32-S3 N16R8 with:
 - speaker path
 - ESP-NOW radio
 
+The current development content pack is 8.75 MiB. N16R8 is therefore the
+minimum useful module, not a generous target. A production partition table
+should put the catalogue in one read-only data partition and keep firmware in
+separate OTA slots, so firmware updates do not duplicate the audio bytes.
+N32R8 is preferable if multiple installed packs or rollback of pack updates is
+required. An 8 MiB flash module cannot hold this catalogue plus the application.
+
 ## Crate Shape
 
 The firmware should be split into hardware-independent and board-specific layers:
@@ -32,9 +39,11 @@ The firmware app should talk to narrow traits:
 - `Buttons`: start/stop and future controls
 - `Radio`: send/receive protobuf envelopes
 - `Clock`: monotonic microsecond local time
-- `Storage`: optional persisted device id/settings
+- `Storage`: persisted settings plus a memory-mapped read-only catalogue slice
 
-The first implementation can keep these traits local to the firmware crate. Move them into `lofi-core` only if they become useful to the simulator or tests.
+The first implementation can keep these traits local to the firmware crate. The
+catalogue parser already borrows `&'static [u8]` without allocation, so firmware
+can point it at memory-mapped flash rather than copying samples into RAM.
 
 ## UI Hardware
 

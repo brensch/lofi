@@ -18,6 +18,15 @@ apps/mesh-lab/public/lofi_web.wasm
 *.profraw
 *.lcov
 
+# Python content-forge environments and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
 # Local configuration and secrets
 .env
 .env.*

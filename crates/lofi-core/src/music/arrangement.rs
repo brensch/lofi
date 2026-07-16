@@ -107,6 +107,11 @@ impl Params {
             reharm: 0,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn base_for_test(seed: u64) -> Self {
+        Self::base(seed)
+    }
 }
 
 /// One composable variation. Each is a pure, always-safe delta on `Params`.
@@ -172,7 +177,7 @@ impl Feature {
             Feature::KickB => p.kick_variant = 2,
             Feature::HalfTime => p.half_time = true,
             Feature::DrumFill => p.drum_fill = p.drum_fill.wrapping_add(1),
-            Feature::SwingHard => p.swing_extra = 18,
+            Feature::SwingHard => p.swing_extra = 10,
             Feature::Walk => {
                 p.bass_walk = true;
                 p.bass_busy = true;
@@ -225,7 +230,9 @@ impl Feature {
 
 /// Bars per arrangement phrase (one turn).
 pub const BARS_PER_PHRASE: i64 = 8;
-const WINDOW: usize = 4;
+// Two phrase cards can overlap. This keeps the mesh's collaborative selection
+// audible without allowing every instrument lane to become busy at once.
+const WINDOW: usize = 2;
 
 /// The resolved arrangement at a given phrase.
 #[derive(Clone, Copy, Debug)]
@@ -250,14 +257,6 @@ impl Arrangement {
                 .wrapping_mul(31)
                 .wrapping_add(feature.code())
                 .wrapping_add(sel as u32);
-            for role in ROLES {
-                let lane = pick_role_lane(seed, p, selector_for_role(roster, role), role);
-                lane.apply(&mut params);
-                fingerprint = fingerprint
-                    .wrapping_mul(17)
-                    .wrapping_add(lane.code())
-                    .wrapping_add(role.code());
-            }
             if p == phrase {
                 selector = sel;
             }
@@ -283,18 +282,6 @@ impl Arrangement {
     }
 }
 
-impl Role {
-    fn code(self) -> u32 {
-        match self {
-            Role::Pulse => 1,
-            Role::Pocket => 2,
-            Role::Low => 3,
-            Role::Color => 4,
-            Role::Motif => 5,
-        }
-    }
-}
-
 fn selector_for(roster: &[NodeId], phrase: i64) -> NodeId {
     if roster.is_empty() {
         return 0;
@@ -302,59 +289,11 @@ fn selector_for(roster: &[NodeId], phrase: i64) -> NodeId {
     roster[phrase.rem_euclid(roster.len() as i64) as usize]
 }
 
-fn selector_for_role(roster: &[NodeId], role: Role) -> NodeId {
-    if roster.is_empty() {
-        return 0;
-    }
-    let role_ix = ROLES.iter().position(|r| *r == role).unwrap_or(0);
-    roster[role_ix % roster.len()]
-}
-
 fn pick(seed: u64, phrase: i64, selector: NodeId) -> Feature {
     let h = splitmix(
         seed ^ (phrase as u64).wrapping_mul(0x9e37_79b9) ^ selector.wrapping_mul(0x85eb_ca6b),
     );
     CATALOG[(h as usize) % CATALOG.len()]
-}
-
-fn pick_role_lane(seed: u64, phrase: i64, selector: NodeId, role: Role) -> Feature {
-    let role_catalog: &[Feature] = match role {
-        Role::Pulse => &[
-            Feature::KickA,
-            Feature::KickB,
-            Feature::HalfTime,
-            Feature::SubBass,
-        ],
-        Role::Pocket => &[
-            Feature::DoubleHats,
-            Feature::SparseHats,
-            Feature::OpenHats,
-            Feature::Ghosts,
-            Feature::DrumFill,
-            Feature::SwingHard,
-        ],
-        Role::Low => &[
-            Feature::Walk,
-            Feature::BassSkip,
-            Feature::SubBass,
-            Feature::BusyBass,
-        ],
-        Role::Color => &[
-            Feature::RichChords,
-            Feature::KeyStabs,
-            Feature::SparseKeys,
-            Feature::Dusty,
-            Feature::PadPulse,
-            Feature::Reharm,
-        ],
-        Role::Motif => &[Feature::LeadIn, Feature::BusyLead, Feature::NewMotif],
-    };
-    let h = splitmix(
-        seed ^ (phrase as u64).wrapping_mul(0x517c_c1b7)
-            ^ selector.wrapping_mul(0x27d4_eb2d)
-            ^ (role.code() as u64).wrapping_mul(0x1656_67b1),
-    );
-    role_catalog[(h as usize) % role_catalog.len()]
 }
 
 fn splitmix(mut x: u64) -> u64 {
@@ -436,6 +375,31 @@ mod tests {
         // A later phrase generally differs.
         let c = Arrangement::at(99, &roster, 9);
         assert_ne!(a.codename(), c.codename());
+    }
+
+    #[test]
+    fn arrangement_has_a_bounded_variation_budget() {
+        let roster = [1u64, 2, 3, 4];
+        for seed in 0..64 {
+            for phrase in 0..64 {
+                let actual = Arrangement::at(seed, &roster, phrase).params;
+                let mut candidates = [Params::base(seed); CATALOG.len() * CATALOG.len()];
+                let mut len = 0;
+                for first in CATALOG {
+                    for second in CATALOG {
+                        let mut params = Params::base(seed);
+                        first.apply(&mut params);
+                        second.apply(&mut params);
+                        candidates[len] = params;
+                        len += 1;
+                    }
+                }
+                assert!(
+                    phrase == 0 || candidates[..len].contains(&actual),
+                    "phrase {phrase} exceeded two active feature cards"
+                );
+            }
+        }
     }
 
     #[test]

@@ -6,12 +6,14 @@
 //! lives on another box.
 
 use crate::music::arrangement::{Params, Role};
+use crate::music::catalog::{ElementKind, PackedCatalog, AI_CATALOG};
 use crate::music::character::{vinyl, warble};
+use crate::music::content::{motif_for, signature_for, GrooveSignature};
+use crate::music::dsp::{fast_decay, soft_clip};
 use crate::music::kit::{Kit, Tone};
-use crate::music::patch::{fast_decay, render_patch, soft_clip};
 use crate::music::progression::ChordSlot;
 use crate::music::progression::Progression;
-use crate::music::sample::render_sample;
+use crate::music::sample::{render_sample, render_sample_pitched};
 use crate::music::theory::midi_to_hz;
 use crate::transport::Transport;
 use crate::Micros;
@@ -19,11 +21,10 @@ use crate::Micros;
 const TICKS_PER_STEP: i64 = 24;
 const STEPS_PER_BAR: i64 = 16;
 const SCAN_STEPS: i64 = 48;
-const DRUM_LAIDBACK_US: i64 = 12_000;
 
 /// Everything a voice needs, resolved once per audio block: transport + seed for
 /// timing, the arrangement `params` for pattern density, and the `kit` that
-/// supplies the instrument timbres and tape/vinyl tone for this vibe.
+/// supplies the tape/vinyl tone profile for this vibe.
 #[derive(Clone, Copy, Debug)]
 pub struct BeatCtx {
     pub transport: Transport,
@@ -31,6 +32,9 @@ pub struct BeatCtx {
     pub sample_rate: u32,
     pub params: Params,
     pub kit: &'static Kit,
+    pub catalog: &'static PackedCatalog,
+    pub signature: &'static GrooveSignature,
+    pub tone: Tone,
     progression: Progression,
 }
 
@@ -44,14 +48,24 @@ impl BeatCtx {
     ) -> Self {
         let progression =
             Progression::generate(seed ^ (params.reharm as u64).wrapping_mul(0x2545_f491));
+        let signature = signature_for(seed);
         Self {
             transport,
             seed,
             sample_rate,
             params,
             kit,
+            catalog: &AI_CATALOG,
+            signature,
+            tone: signature.blend_tone(kit.tone),
             progression,
         }
+    }
+
+    /// Use a catalogue memory-mapped by firmware instead of the bundled pack.
+    pub const fn with_catalog(mut self, catalog: &'static PackedCatalog) -> Self {
+        self.catalog = catalog;
+        self
     }
 }
 
@@ -84,73 +98,91 @@ fn drum_kick(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     let p = &ctx.params;
     let t = &ctx.transport;
     let si = t.tick_at(mesh_us).div_euclid(TICKS_PER_STEP);
-    let bar = bar_at(t, mesh_us);
-    let kit = ctx.kit;
+    let signature = ctx.signature;
 
     onsets::<4>(
         mesh_us,
         t,
         si,
         ctx.seed,
-        DRUM_LAIDBACK_US,
+        signature.kick_delay_us,
+        signature.humanize_us / 2,
         0,
         1.0,
         none,
-        |s| kick_step(s, p, bar),
+        |step| kick_step(step, p, signature),
     )
     .into_iter()
     .flatten()
     .map(|onset| {
         let step = onset.step_index.rem_euclid(STEPS_PER_BAR);
-        let sample = if matches!(step, 0 | 8) {
-            kit.drums.kick_hard
-        } else {
-            kit.drums.kick_soft
-        };
-        render_sample(sample, onset.age)
+        ctx.catalog
+            .choose(
+                ElementKind::Kick,
+                ctx.seed ^ onset.step_index as u64 ^ (step as u64).rotate_left(17),
+            )
+            .map(|element| render_sample(&element.sample, onset.age))
+            .unwrap_or(0.0)
     })
     .sum::<f32>()
-        * 0.95
+        * signature.kick_gain
 }
 
 fn drum_snare(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     let p = &ctx.params;
     let t = &ctx.transport;
     let si = t.tick_at(mesh_us).div_euclid(TICKS_PER_STEP);
-    let bar = bar_at(t, mesh_us);
-    let kit = ctx.kit;
+    let signature = ctx.signature;
 
     let mut snare = onsets::<4>(
         mesh_us,
         t,
         si,
         ctx.seed,
-        DRUM_LAIDBACK_US,
+        signature.snare_delay_us,
+        signature.humanize_us,
         11,
         0.8,
         none,
-        |s| snare_step(s, p, bar),
+        |step| snare_step(step, p, signature),
     )
     .into_iter()
     .flatten()
-    .map(|onset| render_sample(kit.drums.snare_hard, onset.age))
+    .map(|onset| {
+        ctx.catalog
+            .choose(
+                ElementKind::Snare,
+                ctx.seed ^ (onset.step_index as u64).rotate_left(23),
+            )
+            .map(|element| render_sample(&element.sample, onset.age))
+            .unwrap_or(0.0)
+    })
     .sum::<f32>()
-        * 0.6;
+        * signature.snare_gain;
     if p.ghosts {
         snare += onsets::<4>(
             mesh_us,
             t,
             si,
             ctx.seed,
-            DRUM_LAIDBACK_US,
+            signature.snare_delay_us + 4_000,
+            signature.humanize_us,
             13,
             0.5,
             none,
-            |s| ghost_step(s, p),
+            |step| ghost_step(step_in_bar(step), p, bar_for_step(step)),
         )
         .into_iter()
         .flatten()
-        .map(|onset| render_sample(kit.drums.snare_soft, onset.age))
+        .map(|onset| {
+            ctx.catalog
+                .choose(
+                    ElementKind::Snare,
+                    ctx.seed ^ (onset.step_index as u64).rotate_left(29) ^ 0x0047_484f_5354,
+                )
+                .map(|element| render_sample(&element.sample, onset.age))
+                .unwrap_or(0.0)
+        })
         .sum::<f32>()
             * 0.18;
     }
@@ -161,43 +193,63 @@ fn drum_hats(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     let p = &ctx.params;
     let t = &ctx.transport;
     let si = t.tick_at(mesh_us).div_euclid(TICKS_PER_STEP);
-    let bar = bar_at(t, mesh_us);
-    let kit = ctx.kit;
+    let signature = ctx.signature;
 
     let step_us = beat_us(t) / 4;
     let extra = p.swing_extra as i64;
     let swing = move |s: i64| {
         if s.rem_euclid(4) == 2 {
-            step_us * (18 + extra) / 100
+            step_us * (signature.swing_percent as i64 + extra.min(10)) / 100
         } else {
             0
         }
     };
-    onsets::<4>(mesh_us, t, si, ctx.seed, 4_000, 23, 0.35, swing, |s| {
-        hat_step(s, p, bar)
-    })
+    onsets::<4>(
+        mesh_us,
+        t,
+        si,
+        ctx.seed,
+        signature.hat_delay_us,
+        signature.humanize_us,
+        23,
+        0.35,
+        swing,
+        |step| hat_step(step, p, signature),
+    )
     .into_iter()
     .flatten()
     .map(|onset| {
-        let sample = if onset.step_index.rem_euclid(4) == 0 {
-            kit.drums.hat_closed
-        } else {
-            kit.drums.hat_pedal
-        };
-        render_sample(sample, onset.age)
+        ctx.catalog
+            .choose(
+                ElementKind::Hat,
+                ctx.seed ^ (onset.step_index as u64).rotate_left(11),
+            )
+            .map(|element| render_sample(&element.sample, onset.age))
+            .unwrap_or(0.0)
     })
     .sum::<f32>()
-        * (if p.open_hats { 0.42 } else { 0.32 })
+        * signature.hat_gain
+        * (if p.open_hats { 1.22 } else { 1.0 })
 }
 
 fn bass(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     let p = &ctx.params;
     let t = &ctx.transport;
     let si = t.tick_at(mesh_us).div_euclid(TICKS_PER_STEP);
-    let w = warble(mesh_us, ctx.kit.tone);
-    onsets::<4>(mesh_us, t, si, ctx.seed, 5_000, 41, 2.5, none, |s| {
-        bass_step(s, p)
-    })
+    let w = warble(mesh_us, ctx.tone);
+    let signature = ctx.signature;
+    onsets::<4>(
+        mesh_us,
+        t,
+        si,
+        ctx.seed,
+        signature.tonal_delay_us,
+        signature.humanize_us / 2,
+        41,
+        2.5,
+        none,
+        |step| bass_step(step, p, signature),
+    )
     .into_iter()
     .flatten()
     .map(|onset| {
@@ -205,43 +257,86 @@ fn bass(mesh_us: Micros, ctx: BeatCtx) -> f32 {
         let step = onset.step_index.rem_euclid(STEPS_PER_BAR);
         let slot = *ctx.progression.slot_for_bar(bar);
         let mut note = slot.bass as i32;
-        if p.bass_walk {
+        if signature.bass_approach.active(onset.step_index) {
+            note = ctx.progression.slot_for_bar(bar + 1).bass as i32 - 1;
+        } else if p.bass_walk {
             note = bass_note(&slot, step, p);
         }
         if p.sub_bass {
             note -= 12;
         }
-        render_patch(
-            ctx.kit.bass,
-            midi_to_hz(note.clamp(24, 60) as u8) * w,
+        let phrase = onset.step_index.div_euclid(128) as u64;
+        render_pitched(
+            ctx.catalog,
+            ElementKind::BassNote,
+            note.clamp(24, 60) as u8,
             onset.age,
-            0,
+            w,
+            ctx.seed ^ phrase.rotate_left(13),
         )
     })
     .sum::<f32>()
-        * 0.7
+        * signature.bass_gain
 }
 
 fn keys(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     let p = &ctx.params;
     let t = &ctx.transport;
     let si = t.tick_at(mesh_us).div_euclid(TICKS_PER_STEP);
-    let w = warble(mesh_us, ctx.kit.tone);
+    let w = warble(mesh_us, ctx.tone);
+    let signature = ctx.signature;
     let mut sum = 0.0;
-    for onset in onsets::<4>(mesh_us, t, si, ctx.seed, 3_000, 31, 3.0, none, |s| {
-        keys_step(s, p)
-    })
+    for onset in onsets::<4>(
+        mesh_us,
+        t,
+        si,
+        ctx.seed,
+        signature.tonal_delay_us,
+        signature.humanize_us / 2,
+        31,
+        3.0,
+        none,
+        |step| keys_step(step_in_bar(step), p),
+    )
     .into_iter()
     .flatten()
     {
         let bar = onset.step_index.div_euclid(STEPS_PER_BAR);
         let slot = *ctx.progression.slot_for_bar(bar);
-        for note in slot.voicing.iter() {
-            sum += render_patch(ctx.kit.keys, midi_to_hz(note) * w, onset.age, 0);
+        let step = step_in_bar(onset.step_index);
+        let selector = ctx.seed ^ (bar.div_euclid(8) as u64).rotate_left(19);
+        if step == 0 {
+            for note in slot.voicing.iter() {
+                sum += render_pitched(
+                    ctx.catalog,
+                    ElementKind::KeysNote,
+                    note,
+                    onset.age,
+                    w,
+                    selector,
+                );
+            }
+        } else {
+            let answer = slot.voicing.notes[2 + (bar.rem_euclid(2) as usize)];
+            sum += render_pitched(
+                ctx.catalog,
+                ElementKind::KeysNote,
+                answer,
+                onset.age,
+                w,
+                selector,
+            ) * 0.8;
         }
-        if p.rich_chords {
+        if p.rich_chords && step == 0 {
             let top = chord_tone(&slot, 4, 1);
-            sum += render_patch(ctx.kit.keys, midi_to_hz(top) * w, onset.age, 0) * 0.5;
+            sum += render_pitched(
+                ctx.catalog,
+                ElementKind::KeysNote,
+                top,
+                onset.age,
+                w,
+                selector,
+            ) * 0.5;
         }
     }
     sum * if p.keys_shape.is_multiple_of(2) {
@@ -258,19 +353,38 @@ fn lead(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     }
     let t = &ctx.transport;
     let si = t.tick_at(mesh_us).div_euclid(TICKS_PER_STEP);
-    let w = warble(mesh_us, ctx.kit.tone);
-    onsets::<4>(mesh_us, t, si, ctx.seed, 6_000, 53, 3.0, none, |s| {
-        lead_step(s, p)
-    })
+    let w = warble(mesh_us, ctx.tone);
+    let signature = ctx.signature;
+    let motif = motif_for(signature, p.lead_shape);
+    onsets::<4>(
+        mesh_us,
+        t,
+        si,
+        ctx.seed,
+        signature.tonal_delay_us,
+        signature.humanize_us,
+        53,
+        3.0,
+        none,
+        |step| motif.active_at(step),
+    )
     .into_iter()
     .flatten()
     .map(|onset| {
-        let bar = onset.step_index.div_euclid(STEPS_PER_BAR);
-        let step = onset.step_index.rem_euclid(STEPS_PER_BAR);
-        let slot = *ctx.progression.slot_for_bar(bar);
-        let phrase = bar.div_euclid(8);
-        let note = lead_note(&slot, phrase, bar, step, p);
-        render_patch(ctx.kit.lead, midi_to_hz(note) * w, onset.age, 0)
+        let event = motif
+            .event_at(onset.step_index)
+            .expect("onset came from motif event");
+        let note = ctx.progression.scale_note(event.degree);
+        let velocity = event.velocity as f32 / 127.0;
+        let phrase = onset.step_index.div_euclid(128) as u64;
+        render_pitched(
+            ctx.catalog,
+            ElementKind::LeadNote,
+            note,
+            onset.age,
+            w,
+            ctx.seed ^ phrase.rotate_left(29),
+        ) * velocity
     })
     .sum::<f32>()
         * if p.lead_busy { 0.28 } else { 0.34 }
@@ -279,22 +393,19 @@ fn lead(mesh_us: Micros, ctx: BeatCtx) -> f32 {
 fn texture(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     let t = &ctx.transport;
     let si = t.tick_at(mesh_us).div_euclid(TICKS_PER_STEP);
-    let w = warble(mesh_us, ctx.kit.tone);
-
-    let mut pad = 0.0;
-    for onset in onsets::<4>(mesh_us, t, si, ctx.seed, 0, 61, 8.0, none, |s| {
-        texture_step(s, &ctx.params)
+    let mut bed = 0.0;
+    for onset in onsets::<4>(mesh_us, t, si, ctx.seed, 0, 0, 61, 8.0, none, |step| {
+        texture_step(step, &ctx.params)
     })
     .into_iter()
     .flatten()
     {
-        let bar = onset.step_index.div_euclid(STEPS_PER_BAR);
-        let slot = *ctx.progression.slot_for_bar(bar);
-        for note in slot.voicing.iter() {
-            pad += render_patch(ctx.kit.pad, midi_to_hz(note) * w, onset.age, 0);
+        let selector = ctx.seed ^ (onset.step_index as u64).rotate_left(7);
+        if let Some(element) = ctx.catalog.choose(ElementKind::TextureLoop, selector) {
+            bed += render_sample(&element.sample, onset.age);
         }
     }
-    pad * if ctx.params.texture_shape.is_multiple_of(2) {
+    bed * if ctx.params.texture_shape.is_multiple_of(2) {
         0.18
     } else {
         0.12
@@ -304,17 +415,28 @@ fn texture(mesh_us: Micros, ctx: BeatCtx) -> f32 {
 fn pump_at(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     let t = &ctx.transport;
     let si = t.tick_at(mesh_us).div_euclid(TICKS_PER_STEP);
-    match onset(mesh_us, t, si, ctx.seed, DRUM_LAIDBACK_US, 0, none, |s| {
-        kick_step(s, &ctx.params, bar_at(t, mesh_us))
-    }) {
+    match onset(
+        mesh_us,
+        t,
+        si,
+        ctx.seed,
+        ctx.signature.kick_delay_us,
+        ctx.signature.humanize_us / 2,
+        0,
+        none,
+        |step| kick_step(step, &ctx.params, ctx.signature),
+    ) {
         Some(age) if age >= 0.0 => 1.0 - 0.5 * fast_decay(age, 0.16),
         _ => 1.0,
     }
 }
 
-fn bar_at(t: &Transport, mesh_us: Micros) -> i64 {
-    t.tick_at(mesh_us)
-        .div_euclid(TICKS_PER_STEP * STEPS_PER_BAR)
+fn step_in_bar(step: i64) -> i64 {
+    step.rem_euclid(STEPS_PER_BAR)
+}
+
+fn bar_for_step(step: i64) -> i64 {
+    step.div_euclid(STEPS_PER_BAR)
 }
 
 fn beat_us(t: &Transport) -> i64 {
@@ -332,6 +454,7 @@ fn onset(
     step_index: i64,
     seed: u64,
     laidback_us: i64,
+    humanize_us: i64,
     salt: u32,
     swing: impl Fn(i64) -> i64,
     active: impl Fn(i64) -> bool,
@@ -342,6 +465,7 @@ fn onset(
         step_index,
         seed,
         laidback_us,
+        humanize_us,
         salt,
         f32::MAX,
         swing,
@@ -366,6 +490,7 @@ fn onsets<const N: usize>(
     step_index: i64,
     seed: u64,
     laidback_us: i64,
+    humanize_us: i64,
     salt: u32,
     max_age: f32,
     swing: impl Fn(i64) -> i64,
@@ -375,13 +500,12 @@ fn onsets<const N: usize>(
     let mut count = 0;
     for back in 0..SCAN_STEPS {
         let s = step_index - back;
-        let sib = s.rem_euclid(STEPS_PER_BAR);
-        if !active(sib) {
+        if !active(s) {
             continue;
         }
         let grid = t.root_time_for_tick(s * TICKS_PER_STEP);
-        let jitter = (noise_seeded(seed, s as u32 ^ (salt << 16)) * 3_500.0) as i64;
-        let onset = grid + laidback_us + jitter + swing(sib);
+        let jitter = (noise_seeded(seed, s as u32 ^ (salt << 16)) * humanize_us as f32) as i64;
+        let onset = grid + laidback_us + jitter + swing(step_in_bar(s));
         let age = (mesh_us - onset) as f32 / 1_000_000.0;
         if age >= 0.0 {
             if age > max_age {
@@ -397,48 +521,50 @@ fn onsets<const N: usize>(
     found
 }
 
-fn kick_step(s: i64, p: &Params, bar: i64) -> bool {
+fn kick_step(step: i64, p: &Params, signature: &GrooveSignature) -> bool {
+    let s = step_in_bar(step);
+    let bar = bar_for_step(step);
     if p.half_time {
         return s == 0 || (is_fill_bar(bar) && matches!(s, 14));
     }
-    let fill = is_fill_bar(bar);
-    match (p.kick_variant + p.drum_fill + bar.rem_euclid(4) as u8) % 5 {
-        1 => matches!(s, 0 | 6 | 10) || (fill && s == 14),
-        2 => matches!(s, 0 | 3 | 8 | 11),
-        3 => matches!(s, 0 | 5 | 10 | 13),
-        4 => matches!(s, 0 | 7 | 12) || (fill && s == 15),
-        _ => matches!(s, 0 | 7 | 10),
-    }
+    let core = signature.kick.active(step);
+    let variation = match p.kick_variant % 3 {
+        1 => s == 11,
+        2 => s == 6,
+        _ => false,
+    };
+    let turnaround = is_fill_bar(bar)
+        && match (p.kick_variant + p.drum_fill) % 3 {
+            1 => s == 15,
+            2 => s == 13,
+            _ => s == 14,
+        };
+    core || variation || turnaround
 }
 
-fn snare_step(s: i64, p: &Params, bar: i64) -> bool {
+fn snare_step(step: i64, p: &Params, signature: &GrooveSignature) -> bool {
+    let s = step_in_bar(step);
+    let bar = bar_for_step(step);
     if p.half_time {
         s == 8 || (is_fill_bar(bar) && matches!(s, 11 | 15))
     } else {
-        matches!(s, 4 | 12) || (is_fill_bar(bar) && p.drum_fill % 2 == 1 && s == 15)
+        signature.snare.active(step) || (is_fill_bar(bar) && p.drum_fill % 2 == 1 && s == 15)
     }
 }
 
-fn ghost_step(s: i64, p: &Params) -> bool {
-    match p.drum_fill % 3 {
-        1 => matches!(s, 3 | 7 | 15),
-        2 => matches!(s, 2 | 11 | 15),
-        _ => matches!(s, 7 | 15),
-    }
+fn ghost_step(s: i64, p: &Params, bar: i64) -> bool {
+    s == 7 || (is_fill_bar(bar) && p.drum_fill % 2 == 1 && s == 15)
 }
 
-fn hat_step(s: i64, p: &Params, bar: i64) -> bool {
-    let bar_shape = (p.drum_fill + bar.rem_euclid(4) as u8) % 4;
-    match p.hat_density {
-        0 => matches!(s, 0 | 8) || (bar_shape == 2 && s == 12),
-        2 => !matches!((bar_shape, s), (1, 3 | 11) | (2, 7 | 15)),
-        _ => match bar_shape {
-            1 => matches!(s, 0 | 2 | 6 | 8 | 10 | 14),
-            2 => matches!(s, 0 | 4 | 6 | 8 | 12 | 14),
-            3 => s % 2 == 0 || s == 15,
-            _ => s % 2 == 0,
-        },
-    }
+fn hat_step(step: i64, p: &Params, signature: &GrooveSignature) -> bool {
+    let s = step_in_bar(step);
+    let bar = bar_for_step(step);
+    let core = match p.hat_density {
+        0 => matches!(s, 0 | 8),
+        2 => s % 2 == 0 || matches!(s, 3 | 11),
+        _ => signature.hats.active(step),
+    };
+    core || (is_fill_bar(bar) && p.drum_fill > 0 && s == 15)
 }
 
 fn is_fill_bar(bar: i64) -> bool {
@@ -447,55 +573,38 @@ fn is_fill_bar(bar: i64) -> bool {
 
 fn keys_step(s: i64, p: &Params) -> bool {
     if p.keys_sparse {
-        matches!(s, 0 | 12) && p.keys_shape % 2 == 1 || s == 0
-    } else {
-        match p.keys_shape % 3 {
-            1 => matches!(s, 0 | 4 | 11),
-            2 => matches!(s, 0 | 7 | 12 | 14),
-            _ => matches!(s, 0 | 6 | 10),
-        }
-    }
-}
-
-fn bass_step(s: i64, p: &Params) -> bool {
-    if p.bass_busy {
-        match p.bass_shape % 3 {
-            1 => matches!(s, 0 | 3 | 7 | 10 | 14),
-            2 => matches!(s, 0 | 5 | 8 | 11 | 15),
-            _ => matches!(s, 0 | 4 | 8 | 10 | 14),
-        }
-    } else {
-        match p.bass_shape % 3 {
-            1 => matches!(s, 0 | 7),
-            2 => matches!(s, 0 | 10 | 14),
-            _ => matches!(s, 0 | 10),
-        }
-    }
-}
-
-fn lead_step(s: i64, p: &Params) -> bool {
-    if p.lead_busy {
-        match p.lead_shape % 4 {
-            1 => matches!(s, 1 | 5 | 9 | 13),
-            2 => matches!(s, 2 | 5 | 11 | 15),
-            3 => matches!(s, 3 | 6 | 10 | 14),
-            _ => matches!(s, 2 | 6 | 10 | 14),
-        }
-    } else {
-        match p.lead_shape % 4 {
-            1 => matches!(s, 2 | 11),
-            2 => matches!(s, 5 | 13),
-            3 => matches!(s, 3 | 10 | 14),
-            _ => matches!(s, 4 | 12),
-        }
-    }
-}
-
-fn texture_step(s: i64, p: &Params) -> bool {
-    if p.texture_shape.is_multiple_of(2) {
         s == 0
     } else {
-        matches!(s, 0 | 8)
+        match p.keys_shape % 3 {
+            1 => matches!(s, 0 | 10),
+            2 => matches!(s, 0 | 6),
+            _ => matches!(s, 0 | 12),
+        }
+    }
+}
+
+fn bass_step(step: i64, p: &Params, signature: &GrooveSignature) -> bool {
+    let s = step_in_bar(step);
+    if p.bass_busy {
+        match p.bass_shape % 3 {
+            1 => matches!(s, 0 | 7 | 10 | 14),
+            2 => matches!(s, 0 | 5 | 11 | 15),
+            _ => matches!(s, 0 | 8 | 10 | 14),
+        }
+    } else {
+        signature.bass.active(step)
+            || signature.bass_approach.active(step)
+            || (p.bass_shape % 3 == 2 && s == 14)
+    }
+}
+
+fn texture_step(step: i64, p: &Params) -> bool {
+    let s = step_in_bar(step);
+    let bar = bar_for_step(step);
+    if p.texture_shape.is_multiple_of(2) {
+        bar.rem_euclid(2) == 0 && s == 0
+    } else {
+        s == 0
     }
 }
 
@@ -511,20 +620,6 @@ fn bass_note(slot: &ChordSlot, step: i64, p: &Params) -> i32 {
     bass_chord_tone(slot, pattern[(step / 4 % 4) as usize])
 }
 
-fn lead_note(slot: &ChordSlot, phrase: i64, bar: i64, step: i64, p: &Params) -> u8 {
-    const MOTIFS: [[usize; 8]; 4] = [
-        [0, 1, 2, 1, 0, 2, 3, 1],
-        [2, 1, 0, 1, 4, 2, 1, 0],
-        [0, 2, 1, 3, 2, 0, 1, 2],
-        [1, 2, 4, 2, 1, 0, 2, 1],
-    ];
-    let shape = (p.lead_shape % 4) as usize;
-    let phrase_turn = (phrase as usize).wrapping_add((bar as usize) & 1);
-    let ix = ((step / 2) as usize).wrapping_add(phrase_turn) % MOTIFS[shape].len();
-    let degree = MOTIFS[shape][ix];
-    chord_tone(slot, degree, 1)
-}
-
 fn chord_tone(slot: &ChordSlot, degree: usize, octave: i32) -> u8 {
     let intervals = [
         0,
@@ -535,6 +630,25 @@ fn chord_tone(slot: &ChordSlot, degree: usize, octave: i32) -> u8 {
         slot.chord.quality.fifth() + 12,
     ];
     (slot.chord.root as i32 + intervals[degree % intervals.len()] + octave * 12).clamp(60, 84) as u8
+}
+
+#[inline]
+fn render_pitched(
+    catalog: &'static PackedCatalog,
+    kind: ElementKind,
+    target: u8,
+    age: f32,
+    warble_ratio: f32,
+    selector: u64,
+) -> f32 {
+    let Some(element) = catalog.nearest_note(kind, target, selector) else {
+        return 0.0;
+    };
+    let Some(root) = element.root_semitone else {
+        return 0.0;
+    };
+    let ratio = midi_to_hz(target) / midi_to_hz(root) * warble_ratio;
+    render_sample_pitched(&element.sample, age, ratio)
 }
 
 fn bass_chord_tone(slot: &ChordSlot, degree: usize) -> i32 {
@@ -610,11 +724,31 @@ mod tests {
             .find(|&seed| noise_seeded(seed, step as u32) > 0.5)
             .unwrap();
 
-        let age = onset(grid, &t, step, seed, 0, 0, none, |_| true);
+        let age = onset(grid, &t, step, seed, 0, 3_500, 0, none, |_| true);
         assert!(
             age.is_some(),
             "the previous note was cut before the late onset"
         );
+    }
+
+    #[test]
+    fn harvested_drum_pattern_repeats_every_four_bars() {
+        let p = Params::base_for_test(7);
+        let signature = &crate::music::content::SIGNATURE_FLOATING;
+        for step in 0..64 {
+            assert_eq!(
+                kick_step(step, &p, signature),
+                kick_step(step + 64, &p, signature)
+            );
+            assert_eq!(
+                hat_step(step, &p, signature),
+                hat_step(step + 64, &p, signature)
+            );
+        }
+        for bar in 0..4 {
+            assert!(snare_step(bar * 16 + 4, &p, signature));
+            assert!(snare_step(bar * 16 + 12, &p, signature));
+        }
     }
 
     #[test]

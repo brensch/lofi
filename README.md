@@ -4,7 +4,7 @@ Foundation for an ESP32-S3 lo-fi box that keeps multiple devices in time over ES
 
 ## Current Shape
 
-- `crates/lofi-core`: `no_std` timing, sync, packet, transport, scheduled events, deterministic role-based generation, modular groove-mode hooks, tiny synth helpers, and a procedural lo-fi groove engine.
+- `crates/lofi-core`: `no_std` timing, sync, packet, transport, scheduled events, deterministic role-based sample scheduling, fixed-pack lookup, stateless sample playback, and bounded mix DSP.
 - `crates/lofi-app`: `no_std` **device runtime** — the code that runs identically on hardware and in the simulator. A `Device` owns one box's clock, transport, groove, event queue, play state, and LCD model; it renders mono audio and a 128x64 SSD1306 framebuffer from shared mesh state. Neither the firmware nor the simulator re-implements the musical behavior.
 - `crates/lofi-sim`: host simulation kernel (library + WAV bin) that drives real `Device`s through a simulated ESP-NOW network (drift, loss, latency), a scheduled drop, and a stereo monitor mix. Pan/solo/volume are listener-side controls; a real box just drives one mono speaker.
 - `crates/lofi-web`: allocation-free `no_std` WebAssembly ABI around one real `lofi-app::Device`. Every virtual module is a separate WASM instance with independent memory, clock, peer table, and synth state.
@@ -24,7 +24,7 @@ The Vite predev hook builds the Rust WASM module and stages it for the app.
 Three WASM devices start by default. Add/remove modules, disconnect individual
 modules, change loss/latency/jitter, alter device clock drift, and monitor root
 election, role assignment, peer count, and sync quality in real time. Sequencing,
-synthesis, arrangement, filtering, wire encoding, peer tracking, and clock
+sample playback, arrangement, filtering, wire encoding, peer tracking, and clock
 discipline remain in the same `no_std` runtime intended for firmware. JavaScript
 only models the radio medium, mixes mono speaker outputs for monitoring, and
 renders controls.
@@ -37,9 +37,11 @@ cargo run -p lofi-sim -- --nodes 8 --duration-ms 18000 --sync-start-ms 2500 --gr
 
 Open `target/lofi-two-clusters-merge.wav` with headphones. Four virtual devices start on the left, four start on the right. Each side syncs internally from 2.5 seconds, then the two clusters can hear each other from 8 seconds and converge into one mesh.
 
-The current groove is hybrid: a 55 KB CC0 mu-law bank supplies acoustic kick,
-snare, and hats, while bass, harmony, melody, arrangement, tape character, and
-mixing remain deterministic `no_std` code.
+The current groove is sample-only. A fixed 8.75 MiB pack supplies 233 harvested
+drum hits, pitched one-shots, and compatible loops. Bass, harmony, and melody
+transpose those samples through stateless interpolated playback; no oscillator
+or FM voice produces musical notes. Arrangement, pitch selection, tape
+character, and mixing remain deterministic `no_std` code.
 
 ## Hardware Direction
 
@@ -60,5 +62,6 @@ Next hardware milestones:
 - [Mesh Sync](docs/MESH_SYNC.md)
 - [Hardware Portability](docs/HARDWARE_PORTABILITY.md)
 - [Music Engine](docs/MUSIC_ENGINE.md)
+- [AI Content Pipeline](docs/AI_CONTENT_PIPELINE.md)
 - [Simulator UI](docs/SIMULATOR_UI.md)
 - [Commercialization Roadmap](docs/COMMERCIALIZATION_ROADMAP.md)

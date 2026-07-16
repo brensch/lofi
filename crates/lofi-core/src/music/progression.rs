@@ -11,14 +11,57 @@ use ChordQuality::*;
 /// Comfortable key roots (mid register); voicings re-octave around a center.
 const KEYS: [u8; 6] = [57, 50, 52, 48, 55, 45]; // A D E C G  A(low)
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Mode {
+    Major,
+    Dorian,
+    Aeolian,
+    HarmonicMinor,
+}
+
+impl Mode {
+    const fn intervals(self) -> [i32; 7] {
+        match self {
+            Self::Major => [0, 2, 4, 5, 7, 9, 11],
+            Self::Dorian => [0, 2, 3, 5, 7, 9, 10],
+            Self::Aeolian => [0, 2, 3, 5, 7, 8, 10],
+            Self::HarmonicMinor => [0, 2, 3, 5, 7, 8, 11],
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Template {
+    chords: &'static [(i32, ChordQuality)],
+    mode: Mode,
+}
+
 /// Each template is one bar per entry: `(semitones above key root, quality)`.
-const TEMPLATES: [&[(i32, ChordQuality)]; 6] = [
-    &[(0, Min9), (5, Min7), (10, Dom9), (0, Min9)], // i  iv  VII i   (Dorian)
-    &[(0, Min9), (8, Maj7), (3, Maj9), (10, Dom9)], // i  VI  III VII  (Aeolian)
-    &[(2, HalfDim7), (7, Dom9), (0, Min9), (0, Min9)], // iiø V i i
-    &[(0, Maj9), (9, Min7), (2, Min7), (7, Dom9)],  // I  vi  ii  V    (jazzhop)
-    &[(0, Min9), (5, Min9), (0, Min9), (7, Dom9)],  // i  iv  i   V
-    &[(0, Maj9), (5, Maj7), (0, Maj9), (7, Dom9)],  // dreamy Imaj IVmaj
+const TEMPLATES: [Template; 6] = [
+    Template {
+        chords: &[(0, Min9), (5, Min7), (10, Dom9), (0, Min9)],
+        mode: Mode::Dorian,
+    },
+    Template {
+        chords: &[(0, Min9), (8, Maj7), (3, Maj9), (10, Dom9)],
+        mode: Mode::Aeolian,
+    },
+    Template {
+        chords: &[(2, HalfDim7), (7, Dom9), (0, Min9), (0, Min9)],
+        mode: Mode::HarmonicMinor,
+    },
+    Template {
+        chords: &[(0, Maj9), (9, Min7), (2, Min7), (7, Dom9)],
+        mode: Mode::Major,
+    },
+    Template {
+        chords: &[(0, Min9), (5, Min9), (0, Min9), (7, Dom9)],
+        mode: Mode::HarmonicMinor,
+    },
+    Template {
+        chords: &[(0, Maj9), (5, Maj7), (0, Maj9), (7, Dom9)],
+        mode: Mode::Major,
+    },
 ];
 
 const MAX_CHORDS: usize = 4;
@@ -34,6 +77,8 @@ pub struct ChordSlot {
 pub struct Progression {
     slots: [ChordSlot; MAX_CHORDS],
     len: usize,
+    key: u8,
+    mode: Mode,
 }
 
 impl Progression {
@@ -51,13 +96,16 @@ impl Progression {
             bass: 36,
         }; MAX_CHORDS];
 
-        let mut center = 64;
-        let len = template.len().min(MAX_CHORDS);
-        for (ix, &(offset, quality)) in template.iter().take(MAX_CHORDS).enumerate() {
+        let mut previous = None;
+        let len = template.chords.len().min(MAX_CHORDS);
+        for (ix, &(offset, quality)) in template.chords.iter().take(MAX_CHORDS).enumerate() {
             let root = (key as i32 + offset).clamp(36, 72) as u8;
             let chord = Chord { root, quality };
-            let voicing = chord.voicing(center);
-            center = Chord::center_of(&voicing);
+            let voicing = previous
+                .as_ref()
+                .map(|voicing| chord.voicing_near(voicing))
+                .unwrap_or_else(|| chord.voicing(64));
+            previous = Some(voicing);
             slots[ix] = ChordSlot {
                 chord,
                 voicing,
@@ -65,7 +113,12 @@ impl Progression {
             };
         }
 
-        Self { slots, len }
+        Self {
+            slots,
+            len,
+            key,
+            mode: template.mode,
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -79,6 +132,16 @@ impl Progression {
     pub fn slot_for_bar(&self, bar: i64) -> &ChordSlot {
         let ix = bar.rem_euclid(self.len as i64) as usize;
         &self.slots[ix]
+    }
+
+    /// Place a tonic-relative diatonic degree in the lead register. A motif can
+    /// therefore keep its contour while the chord progression moves underneath.
+    pub fn scale_note(&self, degree: i8) -> u8 {
+        let degree = degree as i32;
+        let index = degree.rem_euclid(7) as usize;
+        let octave = degree.div_euclid(7);
+        let tonic = 60 + (self.key as i32).rem_euclid(12);
+        (tonic + self.mode.intervals()[index] + octave * 12).clamp(55, 84) as u8
     }
 }
 
@@ -116,5 +179,15 @@ mod tests {
                 assert!((48..=84).contains(&n), "voiced note {n} out of register");
             }
         }
+    }
+
+    #[test]
+    fn scale_degrees_are_ordered_and_in_register() {
+        let progression = Progression::generate(9);
+        for degree in -1..10 {
+            assert!((55..=84).contains(&progression.scale_note(degree)));
+        }
+        assert!(progression.scale_note(0) < progression.scale_note(1));
+        assert!(progression.scale_note(6) < progression.scale_note(7));
     }
 }

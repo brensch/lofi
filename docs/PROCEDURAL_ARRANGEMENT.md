@@ -70,19 +70,19 @@ This creates rotation: old features age out, new features enter, and the track c
 
 Performance happens per sample from mesh time and transport:
 
-- drums render kick, snare, hats, and ghost notes
-- bass renders root/sub/walking movement
-- keys render chord comping and extensions
-- lead renders sparse motifs
-- texture renders pad/crackle/dust
+- drums schedule harvested kick, snare, hat, and ghost-hit one-shots
+- bass schedules repitched harvested bass-note one-shots
+- keys voice chords from repitched harvested keys-note one-shots
+- lead schedules sparse scale-degree motifs with harvested lead-note one-shots
+- texture loops harvested room, tape, and harmonic ambience
 
 All roles use the same progression and scale source. Rhythm and pitch choices are deterministic, so devices stay synchronized even when they render different roles.
 
 ## Roles
 
 Roles are structural jobs, not one-off features. Each job owns one clear part so
-the combined mix stays intelligible and the realtime renderer does not synthesize
-the same voice repeatedly on neighboring boxes.
+the combined mix stays intelligible and the realtime renderer does not schedule
+the same sampled role repeatedly on neighboring boxes.
 
 Initial role catalog:
 
@@ -224,37 +224,41 @@ kit-tuned master lowpass.
 
 ## Sound Framework
 
-The synthesis layer is deliberately *data-driven* so the catalogue can grow to
-hundreds of timbres and vibes without new render code.
+The sound layer is deliberately data-driven. The offline content forge can add
+hundreds of new elements without growing the realtime control path.
 
-### Instruments are data (`music::patch`)
+### Instruments are packed samples (`music::catalog`)
 
-Every instrument is a `Patch` value — additive `partials`, an optional 2-op `fm`
-"bark", a `noise` band, a `pitch_env` drop, plus amp envelope, vibrato, tremolo,
-and drive. One pure function, `render_patch(patch, freq, age, nz)`, renders them
-all, so *adding an instrument is adding a `const Patch`* — no engine changes, and
-it inherits determinism for free.
+The fixed `catalog.pack` contains mu-law drum hits, pitched one-shots, and loops.
+Its header has constant-time kind ranges plus eight nearest-root alternatives for
+every target pitch. The parser borrows directly from flash/WASM read-only memory
+and performs no allocation. Bass, keys, and lead notes are produced only by
+interpolated playback of harvested audio; symbolic notes select pitch and timing
+but never create an oscillator voice.
 
-### Vibes are curated bundles (`music::kit`)
+### Vibes are deterministic signatures (`music::content`)
 
-A `Kit` names the pitched `Patch` values (keys/bass/lead/pad), an embedded drum
-bank, and a `Tone` (tape wow/flutter, master cutoff, saturation, vinyl air). A
-kit is a vibe: instruments chosen to sound like one record. Kits are selected
-deterministically from the seed, so the whole mesh lands on the same vibe.
+Harvested groove signatures provide sparse step masks, timing offsets, level
+balances, and motif shapes. The shared seed chooses signatures and sample
+alternatives, so every mesh member independently reaches the same arrangement.
+`Kit` still carries bounded master tone settings while the catalogue supplies all
+audible musical material.
 
 ### Tape/vinyl character (`music::character`)
 
-`warble` is a shared, deterministic tape pitch wobble (slow wow + faster flutter)
-applied to every pitched voice; `vinyl` is the hiss/crackle bed. Both are pure
-functions of mesh time, so the swarm wows as one tape.
+`warble` is a shared, deterministic playback-rate wobble and the color stage adds
+bounded saturation and filtering. Both are pure functions of mesh time, so the
+swarm colors the sampled material consistently.
 
 ### Extending the catalogue
 
-1. Add a `const Patch` in `kit.rs` (or a new preset module) and list it in
-   `ALL_PATCHES` so the property tests cover it.
-2. Add a `const Kit` wiring presets to roles + a `Tone`, and list it in `KITS`.
-3. That's it — `kit_for(seed)` can now land on the new vibe; no changes to
-   `beat`, `device`, or the mesh. The bounded/decay tests guard every preset.
+1. Run `tools/content-forge/forge.py` to generate and separate a controlled theme.
+2. Let the harvester quality-gate, slice, deduplicate, tag, and rebuild the pack.
+3. Publish the resulting `catalog.pack` under `assets/content/` and rebuild WASM.
+
+The runtime catalogue API and render code remain unchanged as the pack grows.
+Catalogue tests validate the format, minimum content, deterministic lookup, and
+real variation among pitched alternatives.
 
 ## Implementation Status
 

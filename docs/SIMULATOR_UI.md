@@ -1,59 +1,34 @@
-# Simulator UI Plan
+# Browser Mesh Lab
 
-## Goal
+## Faithfulness Boundary
 
-The simulator should become a real desktop lab for the groovebox mesh.
+The browser is the only interactive simulation surface. Each virtual module is
+a separate instance of `lofi-web`, containing one real `lofi-app::Device` with
+independent WASM memory, clock discipline, peer table, transport, roles, synth,
+filter state, RX buffer, and TX buffer.
 
-Required UI features:
+Instances never share musical or mesh state. The AudioWorklet may only:
 
-- add/remove virtual devices
-- adjust clock offset and drift per device
-- start/stop sync
-- start/stop transport
-- listen in real time
-- view each device's LCD
-- inspect peer links, packet loss, jitter, and sync quality
-- trigger local calls and watch scheduled responses propagate
+- supply each instance with its simulated monotonic local clock
+- copy encoded `lofi_core::mesh::wire` frames between RX/TX buffers
+- apply bounded radio latency, jitter, loss, disconnects, and clock drift
+- mix each mono speaker output into a listener-side stereo monitor
+- publish low-rate status snapshots to the browser main thread
 
-## Suggested Shape
+This matches the firmware boundary: hardware will replace the JavaScript radio,
+clock, DAC, and controls without replacing device behavior.
 
-Keep the simulation kernel in Rust and expose it to a UI:
+## Realtime Shape
 
-```text
-lofi-core       no_std models
-lofi-sim        simulation kernel, realtime audio, state snapshots
-lofi-ui         desktop UI
-```
+- Web Audio calls the worklet in fixed 128-frame render quanta.
+- The worklet owns up to eight independent WASM instances.
+- A fixed 256-slot packet pool prevents radio traffic from allocating during
+  playback.
+- UI rendering and control events stay on the browser main thread.
+- The batch `lofi-sim` WAV path remains for deterministic regression artifacts.
 
-Good first UI stack options:
+## Controls
 
-- `egui`/`eframe`: fastest native Rust path for controls and LCD-like panels
-- `cpal`: realtime desktop audio output
-- optional WAV export remains for deterministic regression artifacts
-
-## Device Panel
-
-Each virtual device panel should render:
-
-- small LCD preview
-- play state
-- role
-- local clock error
-- mesh quality
-- peer count
-- current section
-- pending call/response count
-
-The LCD preview should use the same display-state struct the firmware uses.
-
-## Audio Routing
-
-The UI should allow:
-
-- stereo mix
-- solo a device
-- pan devices
-- render stems
-- exaggerate sync error for debugging
-
-The current CLI renderer is still useful for repeatable tests. The UI should call the same rendering code.
+The lab exposes module add/remove, monitor pan/level/mute/solo, per-module sync,
+oscillator drift, global network enable, latency, jitter, packet loss,
+composition seed, packet counters, root, role, peer count, and sync quality.

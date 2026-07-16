@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build the timing and sequencing core once, then use it from both desktop simulation and ESP32-S3 firmware.
+Build the timing and sequencing core once, then use it from both browser-hosted WASM devices and ESP32-S3 firmware.
 
 The first audible milestone is deliberately simple: every node outputs the same short beep on the same root-time beat grid. If that works under drift, packet loss, and latency jitter in simulation, the beat generator can grow into drums, swing, pattern state, and sample playback without rewriting synchronization.
 
@@ -11,7 +11,8 @@ The first audible milestone is deliberately simple: every node outputs the same 
 - `lofi-core`: `no_std` packet, clock, sequencing, transport, event, groove, and groove-mode primitives. The shared timing/music math.
 - `lofi-app`: `no_std` **device runtime**. A `Device` is the whole audible behavior of one box — clock discipline, transport, groove, scheduled events, play state, peer tracking, mono audio render, and the 128x64 LCD framebuffer. This is the faithfulness boundary: firmware and the simulator both drive `Device`s through the same methods, so neither re-implements the music. Hardware (I2S DMA, ESP-NOW, SSD1306) sits behind firmware glue; the simulator supplies the same surfaces with a drifting virtual clock and host audio.
 - `lofi-sim`: `std` host simulation kernel (library + WAV bin). It owns the "hardware truth" of per-device oscillator drift, the simulated ESP-NOW network (loss/latency), and the stereo monitor mix. Mono device output is panned listener-side; the device itself is mono, like the real speaker.
-- `lofi-ui`: `eframe`/`egui` + `cpal` desktop lab over the `lofi-sim` kernel. A producer thread runs the kernel into a sample ring; the audio callback only copies, keeping it lock/alloc-light. UI controls flow back as commands; per-frame snapshots drive the panels and LCDs.
+- `lofi-web`: raw `no_std` WASM ABI for one `Device`. The browser creates one independent instance per virtual box and may only provide local time, move encoded mesh packets, and consume fixed audio/status buffers.
+- `apps/mesh-lab`: Vite + React + TypeScript browser mesh lab. An `AudioWorklet` owns all WASM instances, a fixed packet pool that mocks the ESP-NOW medium, and the monitor mix. React owns controls and telemetry rendering on the main thread only.
 - `proto/lofi/v1`: protobuf source of truth for comms.
 
 `lofi-core` deliberately owns the musical timeline too. The important function is:
@@ -47,7 +48,7 @@ root_time = local_time + offset + local_time * rate
 
 `offset` corrects immediate phase error. `rate` corrects oscillator drift. The firmware should feed this model with a monotonic microsecond hardware timer, not wall-clock time.
 
-The simulator now uses a first-pass all-to-all mesh consensus for the audio demo: each node broadcasts its current mesh-time estimate, and peers slew toward received estimates. The intended production algorithm is stricter and is described in [Mesh Sync](docs/MESH_SYNC.md): pairwise probes, weighted offset averaging, uncertainty tracking, split/merge epochs, and slewed consensus time.
+The production sync protocol is **implemented** in `lofi-core::mesh` and drives both the simulator and (eventually) the firmware via one `SyncEngine` per box: a leaderless-emergent root (lowest live id), NTP-style pairwise probes to upstream peers, a weighted peer table with outlier rejection, a monotonic disciplined clock, and clean split/merge. See [Mesh Sync](docs/MESH_SYNC.md). It is validated by `crates/lofi-core/tests/mesh_convergence.rs` (convergence under drift+loss, monotonic mesh time, root failover, cluster merge).
 
 ## Local Prototyping
 

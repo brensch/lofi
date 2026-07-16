@@ -11,13 +11,15 @@ This repo should stay easy to reason about on embedded hardware and in the simul
 Current audit exceptions:
 
 - `crates/lofi-core/src/groove.rs` is at the limit and should be split before adding more synthesis modes.
-- `crates/lofi-app/src/device.rs` is near the limit; split further (e.g. audio render vs. control) before growing it.
+- `crates/lofi-core/src/music/kit.rs` is mostly declarative presets, but should be split into preset families before the catalogue grows.
+- `crates/lofi-core/src/music/beat.rs` and `music/arrangement.rs` should be split by rendering, patterns, features, and naming before adding behavior.
+- `crates/lofi-core/src/mesh/engine.rs`, `crates/lofi-app/src/device.rs`, and `crates/lofi-sim/src/sim/mod.rs` are at or near the limit; split by responsibility before growing them.
 
 ## Modularity
 
 - `lofi-core` stays hardware-independent and `no_std`.
 - Board-specific code must not leak into `lofi-core`.
-- Simulator UI, host audio, firmware drivers, and protocol generation should be separate crates/modules.
+- Browser controls, the AudioWorklet radio substrate, firmware drivers, and protocol generation should remain separate modules.
 - Prefer narrow traits for hardware boundaries: audio output, display, buttons, radio, clock, and storage.
 
 ## Testing

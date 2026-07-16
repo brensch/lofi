@@ -126,7 +126,7 @@ pub fn same_group(source: usize, target: usize) -> bool {
 }
 
 pub fn pans_left(ix: usize) -> bool {
-    (ix / GROUP_SIZE) % 2 == 0
+    (ix / GROUP_SIZE).is_multiple_of(2)
 }
 
 #[cfg(test)]

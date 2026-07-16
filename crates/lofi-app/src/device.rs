@@ -1,43 +1,35 @@
-use lofi_core::clock::{ClockModel, DisciplineConfig};
 use lofi_core::event::{EventQueue, ScheduledEvent, Section};
-use lofi_core::groove::{sample_i16 as groove_sample, GrooveConfig, GroovePart};
-use lofi_core::protocol::{Frame, MessageKind};
-use lofi_core::sequencer::BeepVoice;
+use lofi_core::mesh::wire::MeshMessage;
+use lofi_core::mesh::{SyncEngine, SyncQuality};
+use lofi_core::music::arrangement::{Arrangement, Role, BARS_PER_PHRASE, ROLES};
+use lofi_core::music::kit::kit_for;
+use lofi_core::music::{color, render_role, BeatCtx, Lowpass};
 use lofi_core::transport::Transport;
 use lofi_core::{Micros, NodeId};
 
 use crate::display::DisplayState;
-use crate::peers::PeerTable;
 
-/// Timing-grid period for the shared sync beep.
-pub const BEAT_PERIOD_US: Micros = 500_000;
-/// How long the sync beep sounds each grid point.
-pub const BEEP_DURATION_US: Micros = 45_000;
-/// Sync beep amplitude. Sits under the groove so it reads as a click, not a tone.
-pub const BEEP_AMPLITUDE: i16 = 650;
 /// Default audio render rate. Firmware sets this to the real I2S DAC rate.
 pub const DEFAULT_SAMPLE_RATE: u32 = 48_000;
+/// Ticks per bar (16 sixteenth-steps × 24 ticks at 96 ticks/beat).
+const TICKS_PER_BAR: i64 = 384;
+/// Master lowpass cutoff — rolls off the highs for the lofi tone.
+const LOWPASS_HZ: f32 = 3_600.0;
+/// Peak headroom when converting the f32 mix to i16.
+const OUTPUT_AMPLITUDE: f32 = 11_000.0;
 
 const EVENT_CAPACITY: usize = 16;
 
-/// Direction of a device's arpeggio role on the shared chord.
+/// Legacy arpeggio hint kept for simulator/device construction compatibility.
+/// Procedural role assignment now comes from the mesh roster.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArpDirection {
     Up,
     Down,
 }
 
-impl ArpDirection {
-    fn part(self) -> GroovePart {
-        match self {
-            ArpDirection::Up => GroovePart::ArpUp,
-            ArpDirection::Down => GroovePart::ArpDown,
-        }
-    }
-}
-
-/// A device's musical identity in the mesh: its sync-beep pitch and arp role.
-/// Panning/placement is a listener concern and lives in the simulator, not here.
+/// A device's legacy musical identity. Panning/placement is a listener concern
+/// and lives in the simulator, not here.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeviceVoice {
     pub beep_hz: u32,
@@ -62,15 +54,14 @@ pub struct Device {
     id: NodeId,
     voice: DeviceVoice,
     sample_rate: u32,
-    clock: ClockModel,
+    engine: SyncEngine,
     transport: Transport,
     section: Section,
     seed: u64,
     events: EventQueue<EVENT_CAPACITY>,
     running: bool,
-    sequence: u32,
-    last_sync_error_us: Micros,
-    peers: PeerTable,
+    lowpass: Lowpass,
+    lowpass_cutoff_hz: f32,
 }
 
 impl Device {
@@ -79,20 +70,20 @@ impl Device {
             id,
             voice,
             sample_rate: DEFAULT_SAMPLE_RATE,
-            clock: ClockModel::new(),
+            engine: SyncEngine::new(id),
             transport,
             section: Section::Groove,
             seed,
             events: EventQueue::new(),
             running: true,
-            sequence: 0,
-            last_sync_error_us: 0,
-            peers: PeerTable::new(),
+            lowpass: Lowpass::new(LOWPASS_HZ, DEFAULT_SAMPLE_RATE, 0.707),
+            lowpass_cutoff_hz: LOWPASS_HZ,
         }
     }
 
     pub fn with_sample_rate(mut self, sample_rate: u32) -> Self {
         self.sample_rate = sample_rate.max(1);
+        self.lowpass = Lowpass::new(self.lowpass_cutoff_hz, self.sample_rate, 0.707);
         self
     }
 
@@ -128,13 +119,14 @@ impl Device {
         self.seed
     }
 
-    pub fn clock(&self) -> &ClockModel {
-        &self.clock
+    /// The mesh sync state machine. Firmware/sim drive its network I/O.
+    pub fn engine(&mut self) -> &mut SyncEngine {
+        &mut self.engine
     }
 
-    /// Map this device's local hardware clock to shared mesh/root time.
-    pub fn root_from_local(&self, local_us: Micros) -> Micros {
-        self.clock.root_from_local(local_us)
+    /// Map this device's local hardware clock to shared mesh time (measurement).
+    pub fn mesh_from_local(&self, local_us: Micros) -> Micros {
+        self.engine.mesh_from_local(local_us)
     }
 
     /// Schedule an absolute, idempotent future event on the shared timeline.
@@ -142,81 +134,91 @@ impl Device {
         let _ = self.events.push(event);
     }
 
-    /// Build a sync beacon to broadcast. `local_us` is the send-time hardware clock.
-    pub fn make_sync_frame(&mut self, local_us: Micros) -> Frame {
-        self.sequence = self.sequence.wrapping_add(1);
-        Frame {
-            kind: MessageKind::Sync,
-            node_id: self.id,
-            root_id: 0,
-            sequence: self.sequence,
-            root_time_us: self.clock.root_from_local(local_us),
-            beat_period_us: BEAT_PERIOD_US as u32,
-            flags: 0,
-        }
+    /// A beacon to broadcast now, if due. `local_us` is the hardware clock.
+    pub fn poll_beacon(&mut self, local_us: Micros) -> Option<MeshMessage> {
+        self.engine.due_beacon(local_us)
     }
 
-    /// Consume a received frame: discipline the clock and note the peer.
-    ///
-    /// `local_rx_us` is the receive-time hardware clock; `observed_root_us` is
-    /// the sender's root-time estimate corrected for the measured path delay.
-    pub fn receive_frame(&mut self, frame: Frame, local_rx_us: Micros, observed_root_us: Micros) {
-        if frame.kind != MessageKind::Sync || frame.node_id == self.id {
-            return;
-        }
-        let cfg = DisciplineConfig {
-            reject_offset_us: 750_000,
-            ..DisciplineConfig::default()
-        };
-        let observation = self.clock.observe(local_rx_us, observed_root_us, cfg);
-        if observation.accepted {
-            self.last_sync_error_us = observation.error_us;
-        }
-        self.peers.note(frame.node_id, local_rx_us);
+    /// A probe to unicast to an upstream peer now, if due: `(destination, msg)`.
+    pub fn poll_probe(&mut self, local_us: Micros) -> Option<(NodeId, MeshMessage)> {
+        self.engine.due_probe(local_us)
+    }
+
+    /// Ingest a received mesh frame, returning a reply to unicast back if any.
+    /// `rx_local_us` is the receive-time hardware clock.
+    pub fn handle(&mut self, msg: MeshMessage, rx_local_us: Micros) -> Option<MeshMessage> {
+        self.engine.handle(msg, rx_local_us)
     }
 
     /// Render one mono audio block. `block_start_local_us` is the hardware clock
     /// at the first sample. Allocation-free and lock-free: safe for I2S DMA.
     pub fn render_audio(&mut self, out: &mut [i16], block_start_local_us: Micros) {
-        let block_root = self.clock.root_from_local(block_start_local_us);
-        self.apply_due_events(block_root);
+        let block_mesh = self.engine.schedule_now(block_start_local_us);
+        self.apply_due_events(block_mesh);
 
         if !self.running {
             for sample in out.iter_mut() {
                 *sample = 0;
             }
+            self.lowpass.reset();
             return;
         }
 
+        // Resolve the shared arrangement, this box's roles, and the vibe (kit)
+        // once per block. The kit is chosen deterministically from the seed, so
+        // every box in the mesh renders the same instruments and tone.
+        let roster = self.engine.roster(block_start_local_us);
+        let phrase = self
+            .transport
+            .tick_at(block_mesh)
+            .div_euclid(TICKS_PER_BAR * BARS_PER_PHRASE);
+        let arrangement = Arrangement::at(self.seed, roster.ids(), phrase);
+        let kit = kit_for(self.seed);
+        let mut roles = [false; ROLES.len()];
+        for (j, role) in ROLES.iter().enumerate() {
+            roles[j] = role.assigned_to(roster.my_index(), roster.len());
+        }
+        let ctx = BeatCtx::new(
+            self.transport,
+            self.seed,
+            self.sample_rate,
+            arrangement.params,
+            kit,
+        );
+
+        // The vibe's master lowpass; retune the biquad only when the vibe changes.
+        self.retune_lowpass(kit.tone.cutoff_hz);
+        // Blend the kit's baseline air with the arrangement's `dust` feature so
+        // "Dusty" audibly lifts the crackle without swamping quieter vibes.
+        let mut tone = kit.tone;
+        tone.air *= arrangement.params.dust as f32 * 0.5 + 0.4;
+
         let sr = self.sample_rate as Micros;
-        let beep = BeepVoice::new(BEAT_PERIOD_US, BEEP_DURATION_US, self.voice.beep_hz);
         for (ix, sample) in out.iter_mut().enumerate() {
-            let local_us = block_start_local_us + (ix as Micros * 1_000_000 / sr);
-            let root_us = self.clock.root_from_local(local_us);
-            *sample = self.render_sample(root_us, beep);
+            // Discipline the mesh clock once at the DMA/block boundary. Its rate
+            // cannot change meaningfully within tens of samples, and calling the
+            // affine clock model per sample wastes i128 math on embedded targets.
+            let mesh_us = block_mesh + (ix as Micros * 1_000_000 / sr);
+            let mut dry = 0.0;
+            for (j, role) in ROLES.iter().enumerate() {
+                if roles[j] {
+                    dry += render_role(*role, mesh_us, ctx);
+                }
+            }
+            let colored = color(dry, mesh_us, self.sample_rate, tone);
+            let wet = self.lowpass.process(colored);
+            *sample = (wet * OUTPUT_AMPLITUDE).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
         }
     }
 
-    fn render_sample(&self, root_us: Micros, beep: BeepVoice) -> i16 {
-        let timing = beep.sample_i16(root_us, self.sample_rate, BEEP_AMPLITUDE) as i32;
-        let groove = self.groove(root_us, GroovePart::Drums) as i32
-            + self.groove(root_us, GroovePart::Bass) as i32
-            + self.groove(root_us, GroovePart::Harmony) as i32
-            + self.groove(root_us, self.voice.arp.part()) as i32;
-        (timing + groove).clamp(i16::MIN as i32, i16::MAX as i32) as i16
-    }
-
-    fn groove(&self, root_us: Micros, part: GroovePart) -> i16 {
-        groove_sample(
-            root_us,
-            self.transport,
-            self.section,
-            GrooveConfig {
-                sample_rate: self.sample_rate,
-                seed: self.seed,
-                part,
-            },
-        )
+    /// Retune the master lowpass to the active vibe's `cutoff_hz`. A no-op on the
+    /// common path (the cutoff only moves when the seed picks a new kit), so the
+    /// rare filter re-init is inaudible against the seed change that triggered it.
+    fn retune_lowpass(&mut self, cutoff_hz: f32) {
+        if (cutoff_hz - self.lowpass_cutoff_hz).abs() > 0.5 {
+            self.lowpass = Lowpass::new(cutoff_hz, self.sample_rate, 0.707);
+            self.lowpass_cutoff_hz = cutoff_hz;
+        }
     }
 
     fn apply_due_events(&mut self, root_us: Micros) {
@@ -233,23 +235,34 @@ impl Device {
         }
     }
 
-    pub fn peer_count(&self, now_local_us: Micros) -> u8 {
-        self.peers.count_active(now_local_us)
+    /// Current mesh sync quality (root, stratum, peer count, dispersion).
+    pub fn quality(&self, now_local_us: Micros) -> SyncQuality {
+        self.engine.quality(now_local_us)
     }
 
     /// Snapshot for the LCD. The same struct drives the real SSD1306 panel.
     pub fn display_state(&self, now_local_us: Micros) -> DisplayState {
-        let root_us = self.clock.root_from_local(now_local_us);
-        let tick = self.transport.tick_at(root_us);
+        let mesh_us = self.engine.mesh_from_local(now_local_us);
+        let tick = self.transport.tick_at(mesh_us);
         let ticks_per_bar = (self.transport.ticks_per_beat as i64) * 4;
         let beat_phase = tick.rem_euclid(ticks_per_bar.max(1));
+        let quality = self.engine.quality(now_local_us);
+
+        let roster = self.engine.roster(now_local_us);
+        let bar = tick.div_euclid(TICKS_PER_BAR);
+        let phrase = bar.div_euclid(BARS_PER_PHRASE);
+        let arrangement = Arrangement::at(self.seed, roster.ids(), phrase);
+
         DisplayState {
             node_id: self.id as u32,
             playing: self.running,
             bpm_milli: self.transport.bpm_milli,
-            section: self.section,
-            peers: self.peer_count(now_local_us),
-            sync_error_us: self.last_sync_error_us,
+            role: Role::primary(roster.my_index(), roster.len()),
+            codename: arrangement.codename(),
+            next_codename: Arrangement::next_codename(self.seed, roster.ids(), phrase),
+            bars_to_next: (BARS_PER_PHRASE - bar.rem_euclid(BARS_PER_PHRASE)) as u8,
+            peers: quality.peers,
+            sync_error_us: quality.dispersion_us as Micros,
             beat_phase_milli: ((beat_phase * 1000) / ticks_per_bar.max(1)) as u16,
         }
     }

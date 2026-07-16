@@ -3,19 +3,34 @@ members = [
     "crates/lofi-core",
     "crates/lofi-app",
     "crates/lofi-sim",
-    "crates/lofi-ui",
+    "crates/lofi-web",
 ]
-# lofi-ui pulls cpal (ALSA) and eframe; keep it out of the default set so a bare
-# `cargo test` stays green without GUI/audio system libs. Build it explicitly
-# with `cargo run -p lofi-ui`.
 default-members = [
     "crates/lofi-core",
     "crates/lofi-app",
     "crates/lofi-sim",
+    "crates/lofi-web",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://example.invalid/lofi"
+repository = "https://github.com/brensch/lofi"
+
+# Keep edit/build cycles fast for the UI while optimizing the realtime DSP
+# crates enough to exercise the same render path used by firmware.
+[profile.dev.package.lofi-core]
+opt-level = 3
+
+[profile.dev.package.lofi-app]
+opt-level = 3
+
+[profile.dev.package.lofi-sim]
+opt-level = 3
+
+[profile.dev.package.lofi-web]
+opt-level = 3
+
+[profile.dev.package.libm]
+opt-level = 3

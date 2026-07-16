@@ -72,6 +72,17 @@ impl ClockModel {
         saturating_i128_to_i64(local)
     }
 
+    /// Hard-set the offset so `root_from_local(local_us) == root_us`, keeping the
+    /// learned rate. Used to step (re-lock) after a sustained large error rather
+    /// than rejecting it forever. Clears the rate-estimation history.
+    pub fn reanchor(&mut self, local_us: Micros, root_us: Micros) {
+        let rate_adjust = (local_us as i128 * self.rate_ppb as i128) / PPB_DENOM;
+        self.offset_us = root_us
+            .saturating_sub(local_us)
+            .saturating_sub(saturating_i128_to_i64(rate_adjust));
+        self.last_sample = None;
+    }
+
     pub fn observe(
         &mut self,
         local_rx_us: Micros,

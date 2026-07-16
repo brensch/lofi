@@ -16,7 +16,9 @@ The system should feel immediate locally, while other boxes respond on a shared 
 ## Current Repo State
 
 - `lofi-core` is `no_std` and contains timing, clock discipline, transport, scheduled events, protocol frame primitives, procedural groove generation, and groove-mode extension hooks.
+- `lofi-app` is the shared `no_std` device runtime used by hardware and simulation surfaces.
 - `lofi-sim` is a host simulator that renders WAVs and simulates drifting clocks, packet loss, staged mesh connectivity, and procedural groove audio.
+- `lofi-web` and `apps/mesh-lab` form the realtime browser lab. Every module is an independent WASM device connected through a mocked ESP-NOW packet substrate.
 - `proto/lofi/v1/lofi.proto` defines the semantic communication schema.
 - `buf.yaml` validates the protobuf schema.
 - `docs/` captures product, mesh sync, hardware portability, music engine, and simulator UI direction.
@@ -31,9 +33,7 @@ This creates two isolated four-device clusters, one on the left channel and one 
 
 ## Important Clarification
 
-The current simulator is mesh-style, not single-leader. Every reachable node can broadcast its mesh-time estimate and every other reachable node can slew toward it.
-
-It is still a simplified mesh. The production goal is a stronger NTP-style pairwise measurement system with weighted averaging, outlier rejection, uncertainty, and split/merge epochs.
+The mesh has no fixed leader or infrastructure. Nodes discover an emergent lowest-live-id root, measure upstream peers with NTP-style probes, and slew toward weighted references. The fixed-capacity peer table, outlier rejection, monotonic clock discipline, root failover, and split/merge handling are implemented. Remaining work is hardware integration and tuning against measured ESP-NOW latency.
 
 ## Architecture
 
@@ -50,10 +50,13 @@ board crates
   ESP32-S3 pins, I2S DAC, LCD, buttons, speaker amp, radio setup
 
 lofi-sim
-  host simulation kernel, WAV export, future realtime audio
+  host simulation kernel and WAV export
 
-lofi-ui
-  future desktop UI over the simulator
+lofi-web
+  no_std ABI for one independently instantiated device
+
+apps/mesh-lab
+  Vite/React control panel, AudioWorklet ESP-NOW substrate, and monitor mix
 ```
 
 Rules:
@@ -64,15 +67,11 @@ Rules:
 - Musical events should be scheduled on future ticks.
 - Device behavior should derive from shared state, role, tick, and deterministic seeds.
 
-## Mesh Sync Plan
+## Mesh Sync Status
 
-### Phase 1: Current Baseline
+Implemented in `lofi-core::mesh` and exercised by the simulator:
 
-Keep the current all-to-all mesh beacon simulator as an audible baseline. It is useful for demonstrating staged convergence and split/merge behavior.
-
-### Phase 2: Pairwise Probe Model
-
-Add NTP-style exchanges:
+NTP-style exchange:
 
 ```text
 A sends probe at A:t1
@@ -84,39 +83,20 @@ offset = ((t2 - t1) + (t3 - t4)) / 2
 delay  = ((t4 - t1) - (t3 - t2)) / 2
 ```
 
-Track per-peer:
+- fixed-capacity tracking of peer delay, jitter, age, measured error, topology, and sample count
+- rejection or down-weighting of high-delay samples
+- emergent lowest-live-id root with failover
+- weighted discipline from upstream peers
+- monotonic scheduling time
+- split and merge recovery
+- tests for drift, loss, convergence, failover, offset steps, and no backward time
 
-- offset estimate
-- delay
-- jitter
-- age
-- packet loss
-- confidence score
+Firmware integration remains:
 
-Reject or down-weight high-delay samples.
-
-### Phase 3: Weighted Mesh Consensus
-
-Each node computes a trimmed weighted average from peer estimates:
-
-- lower delay gets more weight
-- lower jitter gets more weight
-- stale peers decay
-- outliers are rejected
-- corrections are slewed, not hard-set
-
-Add tests for:
-
-- convergence under drift
-- convergence under loss
-- no backwards mesh time
-- split clusters
-- cluster merge
-- peer disappearance
-
-### Phase 4: Firmware Integration
-
-Move the mesh state machine into `lofi-core` or a no_std sync module. ESP-NOW tasks only timestamp, encode/decode, and deliver messages to the state machine.
+- timestamp ESP-NOW RX/TX close to the radio operation
+- encode/decode production frames
+- deliver messages to `SyncEngine`
+- tune gains and rejection thresholds from physical measurements
 
 ## Protocol Plan
 
@@ -142,9 +122,19 @@ Options:
 
 Constraint: ESP-NOW sync packets should stay tiny even though v2 supports larger payloads.
 
-## Music Engine Plan
+## Music Engine Status
 
 The goal is infinite evolving lo-fi, not fixed loops.
+
+Implemented in `lofi-core::music`:
+
+- deterministic multi-timescale arrangement features
+- rotating role assignment across the live mesh roster
+- shared chord progressions and compatible bass, keys, lead, drums, and texture
+- data-driven patches and curated kits
+- per-device display role and arrangement codenames
+
+Still planned: call/response input, late-join state snapshots, more modes, and physical audio tuning.
 
 Shared state:
 
@@ -166,7 +156,7 @@ Generation timescales:
 - section: intro, groove, drop, breakdown
 - generation: seed/progression refresh
 
-`GrooveModeEngine` is the current extension hook. Add modes as separate modules before expanding `groove.rs` further.
+`GrooveModeEngine` remains the legacy extension hook. New modes should build on `music` as separate modules; do not expand `groove.rs` further.
 
 Near-term modes:
 
@@ -212,48 +202,42 @@ Firmware milestones:
 2. I2S DMA audio with a hardcoded procedural groove.
 3. Start/stop transport button.
 4. LCD status view: play state, BPM, role, section, peer count, sync quality.
-5. ESP-NOW send/receive with protobuf envelope subset.
-6. Mesh sync state machine.
+5. ESP-NOW send/receive with the production fixed-frame encoding.
+6. Connect radio timestamps and frames to the existing mesh sync state machine.
 7. Scheduled transport/groove events.
 8. Call/response.
 
-## Simulator UI Plan
+## Simulator UI Status
 
-The simulator needs a real UI after the core mesh model improves.
-
-Target features:
+Implemented:
 
 - add/remove virtual devices
 - set clock drift/offset per device
 - start/stop sync
-- split and merge groups
+- start/stop transport
 - listen in real time
 - pan/solo devices
-- render WAVs
-- trigger calls
-- inspect scheduled responses
 - show each device LCD
-- show mesh links and sync quality
 
-Suggested stack:
+The CLI retains deterministic WAV export and staged cluster merge. UI work still planned:
 
-- Rust simulation kernel
-- `egui`/`eframe` for UI
-- `cpal` for realtime audio
-- existing WAV export retained for regression artifacts
+- interactive split and merge groups
+- trigger calls and inspect scheduled responses
+- show mesh links, packet loss, jitter, and sync quality
+- render WAVs/stems from the UI
 
 ## Immediate Engineering Backlog
 
-1. Split `lofi-sim/src/main.rs` into smaller modules.
-2. Split `lofi-core/src/groove.rs` before adding more synthesis.
-3. Add mesh-state tests separate from WAV rendering.
-4. Implement pairwise probe simulation.
-5. Implement weighted peer table and consensus.
-6. Add no-backwards-time tests.
-7. Add transport/groove state snapshots for late joiners.
-8. Add display-state model shared by firmware and simulator.
-9. Add firmware skeleton for ESP32-S3.
-10. Add I2S DMA audio proof on hardware.
+1. Add the ESP32-S3 firmware and board crates.
+2. Prove I2S DMA audio, SSD1306 display, button input, and ESP-NOW on target hardware.
+3. Add transport/groove state snapshots for late joiners.
+4. Add explicit group pairing so nearby customer swarms do not merge accidentally.
+5. Define the compact production wire encoding and compatibility tests.
+6. Split the oversized music preset, arrangement, and beat modules before expanding them.
+7. Add a production test mode for speaker, display, button, radio, and device identity.
+8. Measure end-to-end sync and audio latency on physical boards.
+9. Add reproducible firmware artifacts and ESP32-S3 cross-builds to CI.
+10. Complete the launch gates in [the commercialization roadmap](docs/COMMERCIALIZATION_ROADMAP.md).
 
 ## Quality Bar
 
@@ -269,8 +253,8 @@ Follow [CODE_QUALITY.md](CODE_QUALITY.md). In particular:
 ## Current Verification Commands
 
 ```sh
-cargo fmt --check
-cargo test
-cargo check -p lofi-core --no-default-features
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+cargo test --workspace --all-targets --no-default-features
 buf lint
 ```

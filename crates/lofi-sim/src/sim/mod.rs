@@ -1,7 +1,7 @@
 use lofi_core::event::{EventAction, ScheduledEvent, Section};
-use lofi_core::protocol::Frame;
+use lofi_core::mesh::wire::MeshMessage;
 use lofi_core::transport::Transport;
-use lofi_core::Micros;
+use lofi_core::{Micros, NodeId};
 
 use crate::node::{same_group, NodeSim, SAMPLE_RATE};
 use crate::rng::Lcg;
@@ -12,7 +12,6 @@ mod control;
 pub const DEFAULT_SYNC_START_US: Micros = 2_500_000;
 pub const DEFAULT_GROUP_JOIN_US: Micros = 8_000_000;
 const SONG_ZERO_US: Micros = 2_000_000;
-const BROADCAST_PERIOD_US: Micros = 100_000;
 const NET_STEP_US: Micros = 250;
 const RENDER_BLOCK: usize = 64;
 /// Ticks from "now" to the scheduled demo drop (8 bars at 96 ticks/beat, 4/4).
@@ -22,20 +21,24 @@ const DEMO_DROP_TICKS: i64 = 96 * 8;
 pub struct Simulation {
     global_us: Micros,
     us_acc: i64,
-    next_broadcast_us: Micros,
     sync_start_us: Micros,
     group_join_us: Micros,
     sync_enabled: bool,
     transport: Transport,
     rng: Lcg,
     nodes: Vec<NodeSim>,
-    pending: Vec<PendingFrame>,
+    pending: Vec<PendingMsg>,
     seed: u64,
 }
 
 impl Simulation {
     pub fn new(node_count: usize, seed: u64, sync_start_us: Micros, group_join_us: Micros) -> Self {
-        let transport = Transport::default_at(SONG_ZERO_US);
+        // ~75 BPM, classic boom-bap lofi tempo.
+        let transport = Transport::new(
+            SONG_ZERO_US,
+            75_000,
+            lofi_core::transport::DEFAULT_TICKS_PER_BEAT,
+        );
         let mut rng = Lcg::new(seed);
         let mut nodes = Vec::with_capacity(node_count);
         for ix in 0..node_count {
@@ -45,7 +48,6 @@ impl Simulation {
         Self {
             global_us: 0,
             us_acc: 0,
-            next_broadcast_us: sync_start_us,
             sync_start_us,
             group_join_us,
             sync_enabled: true,
@@ -161,38 +163,50 @@ impl Simulation {
     }
 
     fn step_network(&mut self) {
-        if self.sync_enabled
-            && self.global_us >= self.sync_start_us
-            && self.global_us >= self.next_broadcast_us
-        {
-            self.broadcast_all();
-            self.next_broadcast_us += BROADCAST_PERIOD_US;
+        if self.sync_enabled && self.global_us >= self.sync_start_us {
+            self.emit_sync_traffic();
         }
         self.deliver_due();
     }
 
-    fn broadcast_all(&mut self) {
+    /// Pull each device's due beacons (broadcast) and probes (unicast) and put
+    /// them on the wire. The devices schedule their own cadence; the sim only
+    /// models the radio (reachability, loss, latency).
+    fn emit_sync_traffic(&mut self) {
         for ix in 0..self.nodes.len() {
             let local = self.nodes[ix].local_time(self.global_us);
-            let frame = self.nodes[ix].device.make_sync_frame(local);
-            let bytes = frame.encode();
-            for target in 0..self.nodes.len() {
-                if target == ix
-                    || !self.link_active(ix, target)
-                    || self.rng.next_bounded(100) < self.loss_percent(ix, target)
-                {
-                    continue;
+            if let Some(beacon) = self.nodes[ix].device.poll_beacon(local) {
+                for target in 0..self.nodes.len() {
+                    if target != ix {
+                        self.send(ix, target, beacon);
+                    }
                 }
-                let latency_us = self.rng.range_i64(700, 4_500);
-                self.pending.push(PendingFrame {
-                    rx_global_us: self.global_us + latency_us,
-                    target,
-                    bytes,
-                    latency_us,
-                    sender_root_time_us: frame.root_time_us,
-                });
+            }
+            if let Some((dst_id, probe)) = self.nodes[ix].device.poll_probe(local) {
+                if let Some(target) = self.index_of(dst_id) {
+                    self.send(ix, target, probe);
+                }
             }
         }
+    }
+
+    fn send(&mut self, source: usize, target: usize, msg: MeshMessage) {
+        if !self.link_active(source, target)
+            || self.rng.next_bounded(100) < self.loss_percent(source, target)
+        {
+            return;
+        }
+        let latency_us = self.rng.range_i64(700, 4_500);
+        self.pending.push(PendingMsg {
+            rx_global_us: self.global_us + latency_us,
+            source,
+            target,
+            msg,
+        });
+    }
+
+    fn index_of(&self, id: NodeId) -> Option<usize> {
+        self.nodes.iter().position(|n| n.device.id() == id)
     }
 
     fn link_active(&self, source: usize, target: usize) -> bool {
@@ -215,18 +229,19 @@ impl Simulation {
                 continue;
             }
             let pending = self.pending.swap_remove(ix);
-            let Ok(frame) = Frame::decode(&pending.bytes) else {
-                continue;
-            };
-            if pending.target >= self.nodes.len() {
+            if pending.target >= self.nodes.len()
+                || !self.link_active(pending.source, pending.target)
+            {
                 continue;
             }
+            let rx_global = pending.rx_global_us.max(self.global_us);
             let node = &mut self.nodes[pending.target];
-            let rx_local = node.local_time(pending.rx_global_us);
-            let observed_root = pending
-                .sender_root_time_us
-                .saturating_add(pending.latency_us);
-            node.device.receive_frame(frame, rx_local, observed_root);
+            let rx_local = node.local_time(rx_global);
+            if let Some(reply) = node.device.handle(pending.msg, rx_local) {
+                if let Some(dst) = reply_target(&reply).and_then(|id| self.index_of(id)) {
+                    self.send(pending.target, dst, reply);
+                }
+            }
         }
     }
 
@@ -235,9 +250,11 @@ impl Simulation {
     }
 
     pub fn phase_stats_for(&self, range: std::ops::Range<usize>) -> PhaseStats {
-        let times: Vec<Micros> = self.nodes[range.start..range.end.min(self.nodes.len())]
+        let start = range.start.min(self.nodes.len());
+        let end = range.end.min(self.nodes.len()).max(start);
+        let times: Vec<Micros> = self.nodes[start..end]
             .iter()
-            .map(|node| node.device.root_from_local(node.local_time(self.global_us)))
+            .map(|node| node.device.mesh_from_local(node.local_time(self.global_us)))
             .collect();
         let min = *times.iter().min().unwrap_or(&0);
         let max = *times.iter().max().unwrap_or(&0);
@@ -256,12 +273,19 @@ fn clamp_f32(v: f32) -> i16 {
 }
 
 #[derive(Clone, Debug)]
-struct PendingFrame {
+struct PendingMsg {
     rx_global_us: Micros,
+    source: usize,
     target: usize,
-    bytes: [u8; lofi_core::protocol::WIRE_LEN],
-    latency_us: Micros,
-    sender_root_time_us: Micros,
+    msg: MeshMessage,
+}
+
+/// Where a reply (probe response) should be routed back to.
+fn reply_target(msg: &MeshMessage) -> Option<NodeId> {
+    match msg {
+        MeshMessage::ProbeResponse(r) => Some(r.target),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -9,3 +9,6 @@ default = []
 std = []
 
 [dependencies]
+# Pure-Rust no_std math (sinf/exp2f/...). Deterministic across the host
+# simulator and the ESP32-S3, which matters for sample-accurate mesh rendering.
+libm = "0.2"

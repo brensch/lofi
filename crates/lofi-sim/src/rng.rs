@@ -9,7 +9,7 @@ impl Lcg {
         Self { state: seed }
     }
 
-    pub fn next(&mut self) -> u64 {
+    pub fn next_u64(&mut self) -> u64 {
         self.state = self
             .state
             .wrapping_mul(6364136223846793005)
@@ -18,7 +18,7 @@ impl Lcg {
     }
 
     pub fn next_bounded(&mut self, upper: u64) -> u64 {
-        self.next() % upper.max(1)
+        self.next_u64() % upper.max(1)
     }
 
     pub fn range_i32(&mut self, min: i32, max: i32) -> i32 {

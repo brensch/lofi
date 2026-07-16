@@ -1,103 +1,96 @@
 # Mesh Sync Design
 
-## Target
+This is **implemented** in `lofi-core::mesh` and validated by
+`crates/lofi-core/tests/mesh_convergence.rs`. The simulator and (eventually) the
+firmware drive the same `SyncEngine`.
 
-Use a true mesh clock, not only a leader clock. There can still be a temporary coordinator for transport decisions, but the time base should be estimated from peer relationships and degrade gracefully when a node disappears.
+## Goal
 
-The musical target is tighter than casual IoT timing but looser than sample sync:
+Keep a swarm of boxes on one musical timeline over a lossy, variable-latency
+ESP-NOW link, with no infrastructure and no fixed leader. Target accuracy is
+low-single-digit milliseconds — tighter than casual IoT, looser than sample
+sync. Audio never blocks on the network; it reads a disciplined local clock.
 
-- sub-millisecond to low-single-digit millisecond timing is useful
-- future scheduled events matter more than "play this packet now"
-- audio engines never block on mesh traffic
+## Why this shape (not pure averaging consensus)
 
-## Clock Representation
+An earlier sketch proposed weighted-average consensus (every node slews toward
+the mean of its peers). That is elegant and leaderless, but it has two
+properties that hurt *musical* sync: convergence is slow, and a cluster **merge
+forces a step for everyone** (the mean of two timelines), which is an audible
+glitch on every box at once.
 
-Each node maintains:
+Instead we use a **leaderless-emergent root** with **multi-parent NTP
+discipline**:
 
-```text
-mesh_time = local_time + offset + local_time * rate
-```
+- The root is whichever live node has the lowest id — an emergent, self-healing
+  choice (no election messages, no infrastructure), discovered by gossiping
+  `(root_id, stratum)` in beacons. Any node can be root; if it dies the next
+  lowest id takes over.
+- Every node measures *pairwise* offset/delay to the peers between it and the
+  root (NTP four-timestamp exchange) and disciplines toward them, weighted by
+  path quality. Multiple upstream peers give multi-path robustness without a
+  single fragile parent.
+- A merge is clean: the two clusters already agree *within* themselves; only the
+  higher-id cluster re-parents and slews onto the lower-id root. One side moves,
+  the winning side never glitches.
 
-The raw local timer is monotonic. `mesh_time` is a slewed estimate and should not jump backward.
+## Messages (`mesh::wire`)
 
-## Pairwise Measurement
+All timestamps are local monotonic microseconds. Firmware stamps RX near the
+radio interrupt and TX at send.
 
-Every node periodically runs NTP-style probes with peers:
+- `Beacon` (broadcast, ~300 ms): `sender, root_id, stratum, epoch, mesh_us,
+  rate_ppb, root_dispersion, seq`. Topology + coarse time.
+- `ProbeRequest` (unicast to an upstream peer, ~400 ms): `t1` = send time.
+- `ProbeResponse`: echoes `t1`, adds `t2` (responder RX), `t3` (responder TX),
+  and the responder's `mesh_us` at `t3`, plus its `root_id`/`stratum`.
 
-```text
-A sends probe at A:t1
-B receives at B:t2
-B sends response at B:t3
-A receives at A:t4
-
-offset_ab = ((t2 - t1) + (t3 - t4)) / 2
-delay_ab  = ((t4 - t1) - (t3 - t2)) / 2
-```
-
-Samples with high delay are low quality and should be rejected or heavily down-weighted. The best sample is often the lowest-delay sample in a short window.
-
-## Mesh Estimate
-
-For 3-10 boxes, use weighted offset averaging:
-
-1. Maintain a peer table with the latest pairwise offset, delay, jitter, age, and quality.
-2. Convert each peer's reported mesh-time estimate into a local correction candidate.
-3. Weight candidates by quality:
-   - lower delay is better
-   - lower jitter is better
-   - fresher is better
-   - peers with more stable clocks are better
-4. Compute a trimmed weighted average, discarding obvious outliers.
-5. Slew local offset/rate toward that consensus.
-
-This gives the "true mesh" behavior: no single permanent root. The group clock is the consensus of the group.
-
-## Epochs
-
-The mesh still needs an epoch id so devices know which shared time universe they are in. A simple initial rule:
-
-- each isolated device starts an epoch from its own node id and boot counter
-- when groups meet, the larger group wins
-- tie-break by lowest epoch id
-- losing group slews into the winning epoch, never hard-jumps the audio clock
-
-Transport state is separate from clock epoch. A node can join the clock epoch first, then receive the current transport/groove state.
-
-## Broadcast Cadence
-
-Suggested starting values:
-
-- beacon every 250 ms
-- pairwise probe each visible peer every 1-3 seconds, jittered
-- transport/groove state every 1 second while playing
-- scheduled events rebroadcast until their fire tick is safely in the past
-
-Avoid synchronized broadcast storms. Every periodic job needs deterministic jitter from node id and sequence.
-
-## Call/Response
-
-Local action happens immediately on the initiating device. The initiating device also broadcasts a scheduled response:
+From a completed exchange `t1..t4`:
 
 ```text
-call happened at tick C
-response fires at next_bar(C) + 4 bars
-action = CallResponse(call_id, source_node, phrase ids)
+rtt   = (t4 - t1) - (t3 - t2)
+delay = rtt / 2
+reference_mesh_at_t4 = responder_mesh_at_t3 + delay
+error = reference_mesh_at_t4 - our_mesh(t4)
 ```
 
-Other devices prepare local variations from the shared seed, role, and call id. They do not need streamed notes.
+## Peer table (`mesh::peer`)
 
-## Failure Handling
+Fixed capacity, no allocation. Per peer: smoothed one-way `delay` and `jitter`
+(EWMA), last error, advertised `root_id`/`stratum`, age. Weight rewards low
+delay, low jitter, and low stratum. Samples whose delay is far above the best
+seen are rejected as outliers (retransmits / congested slots). Stale peers age
+out of both the election and discipline.
 
-- If a peer disappears, age out its samples gradually.
-- If the mesh splits, both sides keep playing from their local consensus.
-- If groups rejoin, merge epochs by size/tie-break and slew.
-- Scheduled events carry ids and dedupe keys so rebroadcasts are safe.
+## Disciplined clock (`mesh::clock`)
 
-## Implementation Phases
+`mesh_time = local + offset + local·rate`, built on the tested affine
+`ClockModel`, plus two things musical scheduling needs:
 
-0. Current simulator baseline: all-to-all mesh beacons where every reachable node slews toward peer mesh-time estimates. The CLI demo can start two isolated four-device clusters, sync each cluster internally, then open cross-cluster links so both sides merge into one consensus.
-1. Replace beacon-only correction with all-to-all pairwise probes and weighted averaging.
-2. Add packet loss, jitter, clock drift, and split/merge scenarios.
-3. Add monotonic slew constraints and tests for no backward mesh time.
-4. Move the same state machine into `lofi-core`.
-5. Wire firmware ESP-NOW receive/send tasks to the mesh state machine.
+- **Cold-start step**: the first reference observation snaps onto the timeline
+  instead of slewing in for minutes.
+- **Monotonic scheduling output** (`schedule_now`): never decreases for
+  non-decreasing local time, even right after a backward correction — a backward
+  nudge shows up as the clock briefly *holding still*, never reversing, so a
+  scheduled beat can't be double-fired or skipped.
+
+On a root change (merge/heal) the clock is allowed one re-step to realign
+quickly, then it re-locks to slew-only.
+
+## Failure handling
+
+- Peer disappears → its samples age out; election and discipline ignore it.
+- Root disappears → next lowest id becomes root within the peer timeout.
+- Split → each side keeps playing from its own emergent root.
+- Merge → higher-id side re-parents and slews onto the lower-id root.
+
+Validated by tests: convergence under drift+loss, monotonic mesh time across the
+swarm, root failover, and split→merge.
+
+## Open / future
+
+- Firmware: ESP-NOW RX/TX tasks timestamp frames and hand bytes to `SyncEngine`;
+  fill `t3`/`sender_mesh` at the real TX instant for best accuracy.
+- Transport/groove-state catch-up for late joiners (separate from clock epoch).
+- Call/response on the shared timeline (uses the scheduled-event system).
+- Tuning the discipline gains against real ESP-NOW latency once boards exist.

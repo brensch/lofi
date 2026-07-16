@@ -38,16 +38,21 @@ Actions should be absolute and idempotent:
 
 This lets late or lossy devices recover from the next state packet.
 
-## Simulator Direction
+## Simulator
 
-The simulator should become the main design lab:
+The simulator is the main design lab. Implemented:
 
 - add/remove virtual devices
 - set per-device clock drift and offset
 - start/stop sync
 - listen in real time
 - inspect each device's LCD
-- inspect mesh links, packet loss, time error, and scheduled events
 - render WAVs for repeatable tests
 
-The current CLI/WAV simulator is only the audio and timing kernel. A UI should sit on top of the same simulation state instead of becoming a separate implementation.
+Planned:
+
+- inspect mesh links, packet loss, jitter, and time error
+- trigger calls and inspect scheduled events
+- control split and merge scenarios from the UI
+
+The CLI/WAV renderer and browser WASM modules share the same device runtime. Hardware behavior must continue to enter through that runtime rather than being reimplemented in JavaScript; the browser substrate only transports encoded frames and supplies hardware-clock readings.

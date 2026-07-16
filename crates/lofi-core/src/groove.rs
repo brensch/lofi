@@ -90,7 +90,7 @@ fn drums(root_time_us: Micros, step: u8, phase_us: Micros, section: Section, see
         out += snare(root_time_us, phase_us, seed);
     }
 
-    if step % 2 == 0 || (matches!(section, Section::Drop) && step % 2 == 1) {
+    if step.is_multiple_of(2) || (matches!(section, Section::Drop) && !step.is_multiple_of(2)) {
         out += hat(root_time_us, phase_us, seed);
     }
 
@@ -125,7 +125,7 @@ fn hat(root_time_us: Micros, phase_us: Micros, seed: u64) -> i32 {
         return 0;
     }
     let env = decay(42_000 - phase_us, 42_000, 2_300);
-    let n1 = noise_i32(seed ^ 0xa11_ce, root_time_us / 17, env);
+    let n1 = noise_i32(seed ^ 0x000a_11ce, root_time_us / 17, env);
     let n2 = noise_i32(seed ^ 0x5eed, root_time_us / 31, env);
     (n1 - n2) / 2
 }

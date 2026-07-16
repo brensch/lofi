@@ -1,0 +1,12 @@
+{
+  "name": "lofi",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @lofi/mesh-lab",
+    "build:web": "npm run build --workspace @lofi/mesh-lab",
+    "check:web": "npm run check --workspace @lofi/mesh-lab"
+  }
+}

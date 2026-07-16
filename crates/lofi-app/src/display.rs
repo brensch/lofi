@@ -5,7 +5,7 @@
 //! ships the same `Lcd` bytes to the panel over I2C; the simulator draws the
 //! same pixels on screen, so the lab view is faithful to the hardware.
 
-use lofi_core::event::Section;
+use lofi_core::music::{Codename, Role};
 use lofi_core::Micros;
 
 use crate::font::{glyph, GLYPH_W};
@@ -20,7 +20,13 @@ pub struct DisplayState {
     pub node_id: u32,
     pub playing: bool,
     pub bpm_milli: u32,
-    pub section: Section,
+    /// This box's job in the band.
+    pub role: Role,
+    /// Coined name of the current arrangement combination.
+    pub codename: Codename,
+    /// The arrangement coming next phrase.
+    pub next_codename: Codename,
+    pub bars_to_next: u8,
     pub peers: u8,
     pub sync_error_us: Micros,
     /// Position within the current bar, 0..1000.
@@ -149,15 +155,6 @@ impl Lcd {
     }
 }
 
-pub fn section_label(section: Section) -> &'static str {
-    match section {
-        Section::Intro => "INTRO",
-        Section::Groove => "GROOVE",
-        Section::Drop => "DROP",
-        Section::Breakdown => "BREAK",
-    }
-}
-
 /// Rasterize a [`DisplayState`] into the framebuffer.
 pub fn render(state: &DisplayState, lcd: &mut Lcd) {
     lcd.clear();
@@ -171,17 +168,22 @@ pub fn render(state: &DisplayState, lcd: &mut Lcd) {
         lcd.set_pixel(px, 10, true);
     }
 
-    // BPM, large.
-    x = lcd.draw_int(2, 14, (state.bpm_milli / 1000) as i64, 2);
-    lcd.draw_text(x + 4, 21, "BPM", 1);
+    // Primary role, large enough to be the main performance cue.
+    lcd.draw_text(2, 14, state.role.label(), 2);
 
-    // Section.
-    lcd.draw_text(2, 32, section_label(state.section), 1);
+    // Current and next coined arrangement identities.
+    x = lcd.draw_text(2, 32, "NOW ", 1);
+    lcd.draw_text(x, 32, state.codename.as_str(), 1);
+    x = lcd.draw_text(2, 41, "NEXT ", 1);
+    x = lcd.draw_text(x, 41, state.next_codename.as_str(), 1);
+    x = lcd.draw_text(x + 4, 41, "-", 1);
+    x += lcd.draw_int(x, 41, state.bars_to_next as i64, 1);
+    lcd.draw_text(x, 41, "B", 1);
 
     // Peers and sync quality.
-    x = lcd.draw_text(2, 42, "PEERS ", 1);
-    lcd.draw_int(x, 42, state.peers as i64, 1);
-    x = lcd.draw_text(2, 51, "SYNC ", 1);
+    x = lcd.draw_text(2, 51, "P", 1);
+    x += lcd.draw_int(x, 51, state.peers as i64, 1);
+    x = lcd.draw_text(x + 6, 51, "SYNC ", 1);
     let clamped = state.sync_error_us.clamp(-99_999, 99_999);
     x += lcd.draw_int(x, 51, clamped, 1);
     lcd.draw_text(x, 51, "US", 1);
@@ -201,7 +203,10 @@ mod tests {
             node_id: 3,
             playing: true,
             bpm_milli: 90_000,
-            section: Section::Groove,
+            role: Role::Pulse,
+            codename: Codename::coin(123),
+            next_codename: Codename::coin(456),
+            bars_to_next: 7,
             peers: 4,
             sync_error_us: -42,
             beat_phase_milli: 500,

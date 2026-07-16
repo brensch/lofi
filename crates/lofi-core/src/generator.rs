@@ -18,7 +18,7 @@ pub fn role_note(seed: u64, bar: u32, step: u8, role: VoiceRole) -> Option<NoteE
     let chord = chord_for_bar(seed, bar);
     match role {
         VoiceRole::Kick => {
-            if step % 4 == 0 || (step == 14 && chance(seed, bar, step, 3, 10)) {
+            if step.is_multiple_of(4) || (step == 14 && chance(seed, bar, step, 3, 10)) {
                 Some(NoteEvent {
                     midi_note: 36,
                     velocity: 115,
@@ -29,7 +29,7 @@ pub fn role_note(seed: u64, bar: u32, step: u8, role: VoiceRole) -> Option<NoteE
             }
         }
         VoiceRole::Bass => {
-            if step % 4 == 0 {
+            if step.is_multiple_of(4) {
                 Some(NoteEvent {
                     midi_note: chord.root,
                     velocity: 96,

@@ -2,7 +2,7 @@ use lofi_core::Micros;
 use std::env;
 use std::path::PathBuf;
 
-use lofi_sim::{DEFAULT_GROUP_JOIN_US, DEFAULT_SYNC_START_US, GROUP_SIZE};
+use lofi_sim::{DEFAULT_GROUP_JOIN_US, DEFAULT_SYNC_START_US};
 
 #[derive(Debug)]
 pub struct Args {
@@ -45,7 +45,7 @@ impl Args {
             }
         }
 
-        out.nodes = out.nodes.max(GROUP_SIZE * 2);
+        out.nodes = out.nodes.max(1);
         out
     }
 }

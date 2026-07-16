@@ -4,12 +4,16 @@
 indexes followed by 22.05 kHz mono G.711 mu-law audio. `lofi-core` parses it
 directly from flash/WASM read-only memory without allocation.
 
-The current development pack contains 192 accepted elements from four locally
-generated instrumental references: 82 drum hits, 99 pitched one-shots, and 11
-compatible loops. The forge conforms every source to the shared tempo/downbeat
-grid, ends drum hits before the next detected transient, and normalizes bass-loop
-RMS before mu-law encoding. It is a prototype content pack pending listening
-approval and a separate commercial-rights review.
+The current development pack contains 217 accepted elements from four locally
+generated instrumental references and one original CC0 multitrack construction
+kit: 103 drum hits, 99 pitched one-shots, and 15 compatible loops. The forge
+conforms every source to the shared tempo/downbeat grid, ends drum hits before
+the next detected transient, and normalizes bass-loop RMS before mu-law encoding.
+
+The CC0 source and its transformations are recorded in
+`catalog.sources.json`. The locally generated references remain a prototype
+pending a separate commercial-rights review; the presence of one cleared source
+does not clear the complete pack for sale.
 
 Rebuild the working catalogue under `target/` with:
 

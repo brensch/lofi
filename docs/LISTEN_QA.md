@@ -16,16 +16,16 @@ the complete four-phrase macro arc.
 
 | Seed | RMS | Peak | Tempo | Beat jitter | Phrase range | Stereo balance | Result |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| 0 | -29.38 dBFS | -10.59 dBFS | 80.36 BPM | 10.67 ms | 1.38 dB | 0.07 dB | PASS |
-| 1 | -28.97 dBFS | -9.40 dBFS | 80.36 BPM | 10.67 ms | 1.19 dB | 0.99 dB | PASS |
-| 2 | -28.83 dBFS | -10.54 dBFS | 80.36 BPM | 10.67 ms | 2.14 dB | 0.61 dB | PASS |
+| 0 | -28.03 dBFS | -9.09 dBFS | 80.36 BPM | 10.67 ms | 1.26 dB | 0.90 dB | PASS |
+| 1 | -29.54 dBFS | -10.61 dBFS | 80.36 BPM | 10.67 ms | 1.36 dB | 0.15 dB | PASS |
+| 2 | -28.27 dBFS | -9.28 dBFS | 80.36 BPM | 10.67 ms | 2.01 dB | 1.45 dB | PASS |
 
 All three pass level, headroom, crest factor, clipping, active-stereo, scale,
 rhythm, and musical-evolution checks. No render contains a clipped sample. The
 10.67 ms figure is one 512-sample analysis hop, not measured transport drift.
 
 Isolated bass renders also pass a dedicated gate. Their RMS levels span only
-0.70 dB across the three selectable seeds, peaks remain below -15.7 dBFS, and
+0.68 dB across the three selectable seeds, peaks remain below -16.3 dBFS, and
 the ratio of energy above 800 Hz remains below 0.002%. The runtime adds a cheap
 420 Hz low-pass to the bass role; the forge normalizes source bass loops to a
 shared RMS target before packing them.
@@ -37,10 +37,13 @@ source drum performance. Drum harvesting now ends a hit before the next source
 onset. The matching Pocket render contained exactly the expected 120 attacks,
 with a worst-case 7.83 ms onset-detector offset and no off-grid events.
 Artificial vinyl impulses have also been removed from the audio path. CLAP
-positive lo-fi probability is above 96% for all three current seeds. Audiobox
-content-enjoyment scores are 7.47-7.56 and production-quality scores are
-7.24-7.96. An earlier cadence failed the final phrase window and was revised;
-an underperforming harmony-only scene was removed from automatic selection.
+positive lo-fi probability is 98.18-99.61% across the current seeds. Audiobox
+content-enjoyment scores are 7.11-7.63 and production-quality scores are
+7.39-7.83. Seed 0 uses the original aligned stems from the CC0 Orion
+construction kit; its stem sum correlates 0.9998 with the published full mix,
+avoiding source-separation residue. An earlier cadence failed the final phrase
+window and was revised; an underperforming harmony-only scene was removed from
+automatic selection.
 
 ## Reproduction
 

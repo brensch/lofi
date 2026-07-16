@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "catalog_sha256": "5f72271459f0fac3e2fbd3ce3ff693e3fb937a3c5f9fbd93101cc3375cddabab",
+  "sources": [
+    {
+      "id": "orion-cc0",
+      "title": "Orion",
+      "creator": "deadrobotmusic",
+      "source_url": "https://freesound.org/people/deadrobotmusic/packs/34410/",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sound_ids": [623298, 623299, 623300, 623301, 623302, 623303, 623304, 623305, 623306, 623622, 623623],
+      "source_bpm": 144,
+      "playback_bpm": 72,
+      "key": "Eb",
+      "mode": "Minor",
+      "selection_seconds": [13.333333, 26.666667],
+      "transformations": [
+        "aligned four-bar half-time excerpt",
+        "mono downmix",
+        "22.05 kHz resample",
+        "role grouping from original aligned stems",
+        "G.711 mu-law encoding"
+      ],
+      "commercial_clearance": "CC0 source verified"
+    },
+    {
+      "id": "planned-theme-a",
+      "commercial_clearance": "pending local-generation review"
+    },
+    {
+      "id": "planned-theme-b",
+      "commercial_clearance": "pending local-generation review"
+    },
+    {
+      "id": "planned-theme-c",
+      "commercial_clearance": "pending local-generation review"
+    },
+    {
+      "id": "theme-1784192167-000-1c7b548b",
+      "commercial_clearance": "pending local-generation review"
+    }
+  ]
+}

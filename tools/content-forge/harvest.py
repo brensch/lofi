@@ -226,7 +226,7 @@ class PackBuilder:
         self.output = output
         self.max_bytes = max_bytes
         self.source_budget = max_bytes // max(source_count, 1)
-        self.loop_budget = int(self.source_budget * 0.45)
+        self.loop_budget = int(self.source_budget * 0.60)
         self.pack = bytearray()
         self.elements: list[Element] = []
         self.fingerprints: set[tuple[str, str]] = set()

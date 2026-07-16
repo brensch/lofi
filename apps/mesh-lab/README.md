@@ -16,7 +16,7 @@ simulates device behavior.
 
 Each virtual module owns a distinct WASM instance and communicates only by
 encoded mesh frames copied through the worklet's fixed packet pool. The React
-main thread receives telemetry at 10 Hz and cannot block the audio callback.
+main thread receives telemetry at 30 Hz and cannot block the audio callback.
 
 ## Commands
 

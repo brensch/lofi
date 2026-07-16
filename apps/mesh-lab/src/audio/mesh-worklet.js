@@ -1,7 +1,7 @@
 const MAX_NODES = 8;
 const PACKET_SLOTS = 256;
 const WIRE_CAPACITY = 72;
-const TELEMETRY_HZ = 10;
+const TELEMETRY_HZ = 30;
 
 class LofiProcessor extends AudioWorkletProcessor {
   constructor(options) {
@@ -44,7 +44,7 @@ class LofiProcessor extends AudioWorkletProcessor {
     if (
       exports.lofi_render_frames() !== 128 ||
       exports.lofi_wire_capacity() !== WIRE_CAPACITY ||
-      exports.lofi_status_fields() !== 10
+      exports.lofi_status_fields() !== 11
     ) {
       throw new Error("WASM ABI does not match the browser substrate");
     }
@@ -199,12 +199,12 @@ class LofiProcessor extends AudioWorkletProcessor {
     const nodes = this.nodes.map((node) => {
       const [low, high] = splitMicros(this.localTime(node, globalUs));
       const pointer = node.exports.lofi_status(low, high);
-      const status = new Int32Array(node.exports.memory.buffer, pointer, 10);
+      const status = new Int32Array(node.exports.memory.buffer, pointer, 11);
       return {
         id: status[0], rootId: status[1], peers: status[2], dispersionUs: status[3],
         role: status[4], synced: status[5] === 1, meshOffsetUs: status[6],
         beatPhase: status[7], isRoot: status[8] === 1, driftPpm: node.driftPpm,
-        changeInMs: status[9],
+        beatsToChangeMilli: status[9], upcomingChange: status[10],
         offsetUs: node.offsetUs, pan: node.pan, gain: node.gain, mute: node.mute,
         solo: node.solo, radio: node.radio,
       };

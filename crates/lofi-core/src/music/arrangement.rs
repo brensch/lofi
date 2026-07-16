@@ -110,6 +110,7 @@ impl Params {
 }
 
 /// One composable variation. Each is a pure, always-safe delta on `Params`.
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Feature {
     DoubleHats,
@@ -136,7 +137,10 @@ pub enum Feature {
     Reharm,
 }
 
-const CATALOG: [Feature; 22] = [
+// Only advertise variations that the sample-loop renderer currently makes
+// audible. Keeping dormant synthesis-era parameters out of rotation prevents
+// a phrase boundary from promising a change that cannot be heard.
+const CATALOG: [Feature; 15] = [
     Feature::DoubleHats,
     Feature::SparseHats,
     Feature::OpenHats,
@@ -146,19 +150,12 @@ const CATALOG: [Feature; 22] = [
     Feature::HalfTime,
     Feature::DrumFill,
     Feature::SwingHard,
-    Feature::Walk,
-    Feature::BassSkip,
     Feature::SubBass,
     Feature::BusyBass,
     Feature::RichChords,
-    Feature::KeyStabs,
     Feature::SparseKeys,
-    Feature::LeadIn,
     Feature::BusyLead,
-    Feature::NewMotif,
-    Feature::Dusty,
     Feature::PadPulse,
-    Feature::Reharm,
 ];
 
 impl Feature {
@@ -218,8 +215,9 @@ impl Feature {
         }
     }
 
-    fn code(self) -> u32 {
-        CATALOG.iter().position(|f| *f == self).unwrap_or(0) as u32 + 1
+    /// Stable ABI code used by the hardware display and browser telemetry.
+    pub const fn code(self) -> u8 {
+        self as u8 + 1
     }
 }
 
@@ -250,7 +248,7 @@ impl Arrangement {
             feature.apply(&mut params);
             fingerprint = fingerprint
                 .wrapping_mul(31)
-                .wrapping_add(feature.code())
+                .wrapping_add(feature.code() as u32)
                 .wrapping_add(sel as u32);
             if p == phrase {
                 selector = sel;
@@ -394,6 +392,16 @@ mod tests {
                     "phrase {phrase} exceeded two active feature cards"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn every_selectable_feature_changes_rendered_parameters() {
+        for feature in CATALOG {
+            let before = Params::base(2);
+            let mut after = before;
+            feature.apply(&mut after);
+            assert_ne!(before, after, "{feature:?} is not an audible variation");
         }
     }
 

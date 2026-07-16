@@ -28,7 +28,7 @@ pub mod theory;
 
 mod tables;
 
-pub use arrangement::{Arrangement, Codename, Role};
+pub use arrangement::{Arrangement, Codename, Feature, Role};
 pub use beat::{color, render_role, BeatCtx, BeatEvolution};
 pub use catalog::{ElementKind, LoopScene, PackedCatalog, PackedElement, AI_CATALOG};
 pub use content::{signature_for, GrooveSignature, Motif, NoteEvent};

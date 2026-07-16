@@ -18,7 +18,7 @@ use lofi_core::{Micros, NodeId};
 const RENDER_FRAMES: usize = 128;
 const BPM_MILLI: u32 = 80_000;
 const BROADCAST: u32 = 0;
-const STATUS_FIELDS: usize = 10;
+const STATUS_FIELDS: usize = 11;
 
 struct Runtime {
     device: Device,
@@ -118,9 +118,10 @@ pub extern "C" fn lofi_receive(length: u32, local_us_low: u32, local_us_high: i3
     stage_message(runtime, reply, destination)
 }
 
-/// Refresh telemetry and return ten signed 32-bit fields in linear memory:
+/// Refresh telemetry and return eleven signed 32-bit fields in linear memory:
 /// node id, root id, peers, dispersion us, role, synced, mesh offset us, bar
-/// phase 0..1000, root flag, and milliseconds until the next phrase.
+/// phase 0..1000, root flag, thousandths of a beat until the next phrase, and
+/// the stable feature code for the variation arriving at that boundary.
 #[no_mangle]
 pub extern "C" fn lofi_status(local_us_low: u32, local_us_high: i32) -> *const i32 {
     let Some(runtime) = runtime_mut() else {
@@ -143,7 +144,8 @@ pub extern "C" fn lofi_status(local_us_low: u32, local_us_high: i32) -> *const i
         mesh_offset.clamp(i32::MIN as Micros, i32::MAX as Micros) as i32,
         display.beat_phase_milli as i32,
         quality.is_root as i32,
-        display.change_in_millis.min(i32::MAX as u32) as i32,
+        display.beats_to_next_milli.min(i32::MAX as u32) as i32,
+        display.next_feature.code() as i32,
     ];
     runtime.status.as_ptr()
 }

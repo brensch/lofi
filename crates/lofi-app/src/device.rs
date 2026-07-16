@@ -288,11 +288,10 @@ impl Device {
         let phrase = bar.div_euclid(BARS_PER_PHRASE);
         let phrase_ticks = TICKS_PER_BAR * BARS_PER_PHRASE;
         let next_phrase_tick = (tick.div_euclid(phrase_ticks) + 1) * phrase_ticks;
-        let change_in_millis = self
-            .transport
-            .root_time_for_tick(next_phrase_tick)
-            .saturating_sub(mesh_us)
-            .div_euclid(1_000)
+        let ticks_to_next = next_phrase_tick.saturating_sub(tick);
+        let beats_to_next_milli = ticks_to_next
+            .saturating_mul(1_000)
+            .div_euclid(self.transport.ticks_per_beat.max(1) as i64)
             .clamp(0, u32::MAX as i64) as u32;
         let arrangement = Arrangement::at(self.seed, roster.ids(), phrase);
 
@@ -304,7 +303,8 @@ impl Device {
             codename: arrangement.codename(),
             next_codename: Arrangement::next_codename(self.seed, roster.ids(), phrase),
             bars_to_next: (BARS_PER_PHRASE - bar.rem_euclid(BARS_PER_PHRASE)) as u8,
-            change_in_millis,
+            beats_to_next_milli,
+            next_feature: arrangement.incoming,
             peers: quality.peers,
             sync_error_us: quality.dispersion_us as Micros,
             beat_phase_milli: ((beat_phase * 1000) / ticks_per_bar.max(1)) as u16,
@@ -361,9 +361,9 @@ mod tests {
             Transport::new(0, 80_000, 96),
             1,
         );
-        assert_eq!(dev.display_state(0).change_in_millis, 24_000);
-        assert_eq!(dev.display_state(3_000_000).change_in_millis, 21_000);
-        assert_eq!(dev.display_state(23_500_000).change_in_millis, 500);
-        assert_eq!(dev.display_state(24_000_000).change_in_millis, 24_000);
+        assert_eq!(dev.display_state(0).beats_to_next_milli, 32_000);
+        assert_eq!(dev.display_state(3_000_000).beats_to_next_milli, 28_000);
+        assert_eq!(dev.display_state(23_500_000).beats_to_next_milli, 666);
+        assert_eq!(dev.display_state(24_000_000).beats_to_next_milli, 32_000);
     }
 }

@@ -19,7 +19,8 @@ export interface MeshNode {
   synced: boolean;
   meshOffsetUs: number;
   beatPhase: number;
-  changeInMs: number;
+  beatsToChangeMilli: number;
+  upcomingChange: number;
   isRoot: boolean;
   driftPpm: number;
   offsetUs: number;

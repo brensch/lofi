@@ -33,7 +33,8 @@ export function App() {
       {mesh.error && <div className="error-banner" role="alert">{mesh.error}</div>}
       <main className="workspace">
         <ControlPanel
-          changeInMs={leader?.changeInMs}
+          beatsToChangeMilli={leader?.beatsToChangeMilli}
+          upcomingChange={leader?.upcomingChange}
           instanceCount={mesh.telemetry.nodes.length}
           network={mesh.telemetry.network}
           onNetwork={mesh.updateNetwork}

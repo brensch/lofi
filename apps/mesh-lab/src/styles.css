@@ -61,11 +61,17 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 .control-section { padding: 18px 20px; border-bottom: 1px solid var(--line); }
 .control-section + .control-section { padding-top: 17px; }
 .monitor-level { margin-top: 18px; }
+.change-preview { display: grid; gap: 4px; margin-bottom: 16px; padding-left: 11px; border-left: 2px solid var(--coral); }
+.change-preview span { color: var(--coral); font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 9px; line-height: 1.2; }
+.change-preview strong { font-size: 14px; line-height: 1.25; }
+.change-preview p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
 .change-countdown { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
 .change-countdown > span { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
-.change-countdown output { color: var(--yellow); font: 20px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.change-countdown output { color: var(--yellow); font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 20px; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.change-countdown output small { color: var(--muted); font-size: 9px; text-transform: uppercase; }
+.change-bars { grid-column: 1 / -1; color: #74817a; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 9px; line-height: 1.2; }
 .change-countdown > div { grid-column: 1 / -1; height: 4px; overflow: hidden; background: #262e2b; }
-.change-countdown i { display: block; height: 100%; background: var(--yellow); transition: width 100ms linear; }
+.change-countdown i { display: block; height: 100%; background: var(--yellow); transition: width 34ms linear; }
 .section-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; font-size: 12px; }
 .section-title strong, .switch-row strong, .mini-switch span { display: inline-flex; align-items: center; gap: 7px; }
 .section-title span { color: var(--yellow); font-size: 9px; }

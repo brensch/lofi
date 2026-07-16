@@ -5,7 +5,7 @@
 //! ships the same `Lcd` bytes to the panel over I2C; the simulator draws the
 //! same pixels on screen, so the lab view is faithful to the hardware.
 
-use lofi_core::music::{Codename, Role};
+use lofi_core::music::{Codename, Feature, Role};
 use lofi_core::Micros;
 
 use crate::font::{glyph, GLYPH_W};
@@ -27,7 +27,9 @@ pub struct DisplayState {
     /// The arrangement coming next phrase.
     pub next_codename: Codename,
     pub bars_to_next: u8,
-    pub change_in_millis: u32,
+    /// Musical distance to the next phrase, in thousandths of a beat.
+    pub beats_to_next_milli: u32,
+    pub next_feature: Feature,
     pub peers: u8,
     pub sync_error_us: Micros,
     /// Position within the current bar, 0..1000.
@@ -208,7 +210,8 @@ mod tests {
             codename: Codename::coin(123),
             next_codename: Codename::coin(456),
             bars_to_next: 7,
-            change_in_millis: 20_250,
+            beats_to_next_milli: 27_000,
+            next_feature: Feature::HalfTime,
             peers: 4,
             sync_error_us: -42,
             beat_phase_milli: 500,

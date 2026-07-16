@@ -261,6 +261,10 @@ class PackBuilder:
                 self.reject("short_drum_hit")
                 return
         audio, applied_gain = normalize(audio)
+        playback_gain = 1.0 / max(applied_gain, 1e-6)
+        if kind == "bass_loop":
+            target_rms_db = -21.0
+            playback_gain = 10.0 ** ((target_rms_db - dbfs_rms(audio)) / 20.0)
         identity = fingerprint(audio)
         dedupe_key = (kind, identity)
         if dedupe_key in self.fingerprints:
@@ -293,7 +297,7 @@ class PackBuilder:
                 offset=offset,
                 length=len(encoded),
                 sample_rate=TARGET_RATE,
-                gain=round(1.0 / max(applied_gain, 1e-6), 4),
+                gain=round(playback_gain, 4),
                 looped=looped,
                 bars=bars,
                 phase=phase,

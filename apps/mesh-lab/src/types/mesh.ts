@@ -19,6 +19,7 @@ export interface MeshNode {
   synced: boolean;
   meshOffsetUs: number;
   beatPhase: number;
+  changeInMs: number;
   isRoot: boolean;
   driftPpm: number;
   offsetUs: number;
@@ -58,5 +59,4 @@ export type WorkletCommand =
   | { type: "addNode" }
   | { type: "removeNode"; id: number }
   | { type: "node"; id: number; key: NodeControlKey; value: number | boolean }
-  | { type: "network"; key: NetworkControlKey; value: number | boolean }
-  | { type: "seed"; value: number };
+  | { type: "network"; key: NetworkControlKey; value: number | boolean };

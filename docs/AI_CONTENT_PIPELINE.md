@@ -48,7 +48,9 @@ The firmware content currently contains:
 - tone signatures used for bounded per-device coloration.
 
 No MIDI file or synthesized note voice ships in the runtime. The current audible
-path uses grid-conformed tonal loops and source-matched drum one-shots.
+path uses grid-conformed tonal loops and source-matched drum one-shots. Bass
+loops are RMS-normalized to -21 dB before packing so source peak differences do
+not become large loudness differences at runtime.
 Root-tagged tonal one-shots remain in the catalogue for future source-compatible
 arrangements but are not currently scheduled.
 
@@ -79,6 +81,10 @@ Before adding a content pack:
 6. Render every selectable seed through the real browser AudioWorklet/WASM path.
 7. Require technical, CLAP, Audiobox, and human listening approval.
 8. Complete a separate commercial-rights review before shipping any audio bytes.
+
+Harmony-only scenes stay catalogued but are not eligible for automatic playback
+while reviewed melody-backed scenes exist. This prevents a technically valid
+but perceptually weak scene from entering the organic rotation.
 
 ## Growth Model
 

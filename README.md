@@ -29,11 +29,15 @@ discipline remain in the same `no_std` runtime intended for firmware. JavaScript
 only models the radio medium, mixes mono speaker outputs for monitoring, and
 renders controls.
 
+The music evolves automatically at shared eight-bar phrase boundaries. The
+settings panel counts down to the next synchronized change; there is no
+user-facing seed or fixed tape selector.
+
 ### Exact browser-path WAV render
 
 ```sh
 npm run build:web
-node tools/listen-qa/render.mjs --seed 2 --nodes 3 --duration 45 \
+node tools/listen-qa/render.mjs --seed 2 --nodes 5 --duration 96 \
   --output target/listen-qa/seed-2.wav
 ```
 
@@ -42,9 +46,10 @@ including the simulated mesh substrate and browser listener mix. See
 [Listen QA](docs/LISTEN_QA.md) for the automated and human acceptance gates.
 
 The current groove is sample-only. A fixed 5.95 MiB pack supplies 192 harvested
-elements. The audible path selects one source-coherent scene per seed and deals
-source-matched, transient-bounded drum one-shots plus grid-conformed bass,
-harmony, melody, and texture loops across modules.
+elements. The audible path selects one source-coherent scene per session and
+deals source-matched, transient-bounded drum one-shots plus grid-conformed bass,
+harmony, melody, and texture loops across modules. A bounded deterministic
+arrangement changes rhythm density and stem prominence every eight bars.
 No oscillator, unrelated sample shuffle, allocator, or mutable playback cursor
 runs in the audio path.
 

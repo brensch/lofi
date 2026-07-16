@@ -120,17 +120,11 @@ impl PackedCatalog {
     /// Select a coherent source and resolve all of its aligned loop stems.
     /// This scans fixed metadata only when a device starts or changes seed.
     pub fn loop_scene(&'static self, selector: u64) -> Option<LoopScene> {
-        let melodies = self.len_for_kind(ElementKind::MelodyLoop);
-        let harmonies = self.len_for_kind(ElementKind::HarmonyLoop);
-        let anchor_count = melodies + harmonies;
-        if anchor_count == 0 {
-            return None;
-        }
-        let selected = selector as usize % anchor_count;
-        let anchor = if selected < melodies {
-            self.choose(ElementKind::MelodyLoop, selected as u64)?
+        let melody_count = self.len_for_kind(ElementKind::MelodyLoop);
+        let anchor = if melody_count > 0 {
+            self.choose(ElementKind::MelodyLoop, selector % melody_count as u64)?
         } else {
-            self.choose(ElementKind::HarmonyLoop, (selected - melodies) as u64)?
+            self.choose(ElementKind::HarmonyLoop, selector)?
         };
         let source_hash = anchor.source_hash;
         Some(LoopScene {
@@ -301,7 +295,7 @@ mod tests {
             assert!(scene.hat.is_some());
             assert!(scene.bass.is_some());
             assert!(scene.texture.is_some());
-            assert!(scene.melody.is_some() || scene.harmony.is_some());
+            assert!(scene.melody.is_some());
             let elements = [
                 scene.kick,
                 scene.snare,

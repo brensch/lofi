@@ -27,6 +27,7 @@ pub struct DisplayState {
     /// The arrangement coming next phrase.
     pub next_codename: Codename,
     pub bars_to_next: u8,
+    pub change_in_millis: u32,
     pub peers: u8,
     pub sync_error_us: Micros,
     /// Position within the current bar, 0..1000.
@@ -207,6 +208,7 @@ mod tests {
             codename: Codename::coin(123),
             next_codename: Codename::coin(456),
             bars_to_next: 7,
+            change_in_millis: 20_250,
             peers: 4,
             sync_error_us: -42,
             beat_phase_milli: 500,

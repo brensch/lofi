@@ -16,19 +16,26 @@ The mesh roster deals five playback roles across available modules, and every
 module derives hit and loop positions from the same transport tick.
 
 This deliberately trades infinite note-level mutation for musical coherence.
+The session evolves automatically every eight bars. Shared arrangement
+parameters vary kick and hat patterns, ghost notes, fills, bass and harmony
+weight, texture balance, and motif activity. A restrained four-phrase energy
+arc prevents each change from feeling random. Continuous stem-level changes
+crossfade over the first beat; discrete rhythm changes start on the exact phrase
+boundary.
+
 Variation currently comes from:
 
-- three reviewed-development source scenes;
+- two melody-backed reviewed-development source scenes;
+- deterministic eight-bar arrangement changes;
 - different module counts and physical placement;
-- deterministic tone profiles and vinyl character;
-- scheduled seed/scene changes on shared bar boundaries.
+- deterministic tone profiles and vinyl character.
 
 ## Reintroducing Procedural Variation
 
-Future variation must operate inside a source-compatible family. Acceptable
-extensions include muting stems, choosing alternate aligned takes, changing
-four-bar sections, and selecting one-shots tagged with the active scene's source,
-key, and progression. Random cross-source pitched selection is not acceptable.
+Further variation must operate inside a source-compatible family. Acceptable
+extensions include choosing alternate aligned takes, changing four-bar
+sections, and selecting one-shots tagged with the active scene's source, key,
+and progression. Random cross-source pitched selection is not acceptable.
 
 Any extension must:
 

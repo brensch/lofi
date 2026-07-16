@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
 from pathlib import Path
 
 import librosa
@@ -45,6 +46,35 @@ def scale_consistency(chroma: np.ndarray, rate: int, hop: int) -> float:
         best = max(float(np.dot(energy, np.roll(scale, tonic))) / total for tonic in range(12))
         ratios.append(best)
     return float(np.mean(ratios)) if ratios else 0.0
+
+
+def phrase_evolution(audio: np.ndarray, rate: int) -> dict[str, object]:
+    phrase_frames = round(24.0 * rate)
+    phrases = []
+    for index in range(len(audio) // phrase_frames):
+        phrase = audio[index * phrase_frames : (index + 1) * phrase_frames]
+        envelope = librosa.onset.onset_strength(y=phrase, sr=rate, hop_length=512)
+        onsets = librosa.onset.onset_detect(
+            onset_envelope=envelope, sr=rate, hop_length=512
+        )
+        phrases.append(
+            {
+                "index": index,
+                "rms_dbfs": decibels(float(np.sqrt(np.mean(phrase * phrase)))),
+                "onsets_per_second": len(onsets) / 24.0,
+            }
+        )
+    if len(phrases) < 2:
+        return {"available": False, "phrase_seconds": 24.0, "windows": phrases}
+    loudness = [float(phrase["rms_dbfs"]) for phrase in phrases]
+    density = [float(phrase["onsets_per_second"]) for phrase in phrases]
+    return {
+        "available": True,
+        "phrase_seconds": 24.0,
+        "loudness_range_db": max(loudness) - min(loudness),
+        "onset_density_range": max(density) - min(density),
+        "windows": phrases,
+    }
 
 
 def clap_scores(audio: np.ndarray) -> dict[str, object]:
@@ -122,6 +152,10 @@ def evaluate(path: Path, use_clap: bool, use_aesthetics: bool) -> dict[str, obje
         "channel_balance_db": abs(decibels(left_rms) - decibels(right_rms)),
         "clipped_samples": int(np.count_nonzero(np.abs(stereo) >= 0.999)),
     }
+    evolution = phrase_evolution(mono, rate)
+    if evolution["available"]:
+        metrics["phrase_loudness_range_db"] = evolution["loudness_range_db"]
+        metrics["phrase_onset_density_range"] = evolution["onset_density_range"]
     checks = {
         "audible_level": -30.0 <= metrics["rms_dbfs"] <= -10.0,
         "headroom": -18.0 <= metrics["peak_dbfs"] <= -1.0,
@@ -132,8 +166,16 @@ def evaluate(path: Path, use_clap: bool, use_aesthetics: bool) -> dict[str, obje
         "tonal_center": metrics["scale_consistency"] >= 0.61,
         "stereo_output": metrics["channel_balance_db"] <= 3.0,
         "no_clipping": metrics["clipped_samples"] == 0,
+        "musical_evolution": not evolution["available"]
+        or metrics["phrase_loudness_range_db"] >= 0.75
+        or metrics["phrase_onset_density_range"] >= 0.4,
     }
-    report: dict[str, object] = {"file": str(path), "metrics": metrics, "checks": checks}
+    report: dict[str, object] = {
+        "file": str(path),
+        "metrics": metrics,
+        "phrases": evolution,
+        "checks": checks,
+    }
     if use_clap:
         report["clap"] = clap_scores(mono)
     if use_aesthetics:
@@ -168,6 +210,8 @@ def main() -> None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered)
     print(rendered, end="")
+    if report["verdict"] != "PASS":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

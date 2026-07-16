@@ -1,12 +1,11 @@
-import { Link2, Music2, SlidersHorizontal } from "lucide-react";
+import { Clock3, Link2, Music2, SlidersHorizontal } from "lucide-react";
 
 import type { NetworkControlKey, NetworkState } from "../types/mesh";
 
 interface ControlPanelProps {
-  composition: number;
+  changeInMs?: number;
   instanceCount: number;
   network: NetworkState;
-  onComposition: (value: number) => void;
   onNetwork: (key: NetworkControlKey, value: number | boolean) => void;
   onVolume: (value: number) => void;
   sampleRate: number;
@@ -14,7 +13,11 @@ interface ControlPanelProps {
 }
 
 export function ControlPanel(props: ControlPanelProps) {
-  const { composition, instanceCount, network, onComposition, onNetwork, onVolume, sampleRate, volume } = props;
+  const { changeInMs, instanceCount, network, onNetwork, onVolume, sampleRate, volume } = props;
+  const countdown = formatCountdown(changeInMs);
+  const changeProgress = changeInMs === undefined
+    ? 0
+    : Math.max(0, Math.min(100, (1 - changeInMs / 24_000) * 100));
   return (
     <aside className="control-panel" aria-label="Module settings">
       <div className="panel-heading">
@@ -24,13 +27,11 @@ export function ControlPanel(props: ControlPanelProps) {
 
       <section className="control-section">
         <div className="section-title"><strong><Music2 size={14} /> Music</strong></div>
-        <label className="field">
-          <span>Music set</span>
-          <select value={composition} onChange={(event) => onComposition(Number(event.target.value))}>
-            <option value={2}>Tape 02</option><option value={7}>Tape 07</option>
-            <option value={17}>Tape 17</option><option value={42}>Tape 42</option>
-          </select>
-        </label>
+        <div className="change-countdown" role="timer" aria-label={`Next music change in ${countdown}`}>
+          <span><Clock3 size={14} /> Next change</span>
+          <output>{countdown}</output>
+          <div><i style={{ width: `${changeProgress}%` }} /></div>
+        </div>
         <div className="monitor-level">
           <Range label="Master volume" value={volume * 100} min={0} max={100} step={1} suffix="%" decimals={0} onChange={(value) => onVolume(value / 100)} />
         </div>
@@ -63,6 +64,12 @@ export function ControlPanel(props: ControlPanelProps) {
       </footer>
     </aside>
   );
+}
+
+function formatCountdown(milliseconds?: number) {
+  if (milliseconds === undefined) return "--:--";
+  const seconds = Math.max(0, Math.ceil(milliseconds / 1_000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 interface RangeProps {

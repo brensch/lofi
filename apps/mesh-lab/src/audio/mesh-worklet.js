@@ -41,7 +41,11 @@ class LofiProcessor extends AudioWorkletProcessor {
     const id = this.nextNodeId++;
     const instance = new WebAssembly.Instance(this.module, {});
     const exports = instance.exports;
-    if (exports.lofi_render_frames() !== 128 || exports.lofi_wire_capacity() !== WIRE_CAPACITY) {
+    if (
+      exports.lofi_render_frames() !== 128 ||
+      exports.lofi_wire_capacity() !== WIRE_CAPACITY ||
+      exports.lofi_status_fields() !== 10
+    ) {
       throw new Error("WASM ABI does not match the browser substrate");
     }
     exports.lofi_init(Math.round(sampleRate), this.seed, id);
@@ -76,13 +80,6 @@ class LofiProcessor extends AudioWorkletProcessor {
     } else if (command.type === "network") {
       if (Object.hasOwn(this.network, command.key)) this.network[command.key] = command.value;
       if (!this.network.enabled) this.clearPackets();
-    } else if (command.type === "seed") {
-      this.seed = command.value;
-      this.clearPackets();
-      for (const node of this.nodes) {
-        node.exports.lofi_init(Math.round(sampleRate), this.seed, node.id);
-        node.currentGain = 0;
-      }
     }
     this.postTelemetry("telemetry");
   }
@@ -202,11 +199,12 @@ class LofiProcessor extends AudioWorkletProcessor {
     const nodes = this.nodes.map((node) => {
       const [low, high] = splitMicros(this.localTime(node, globalUs));
       const pointer = node.exports.lofi_status(low, high);
-      const status = new Int32Array(node.exports.memory.buffer, pointer, 9);
+      const status = new Int32Array(node.exports.memory.buffer, pointer, 10);
       return {
         id: status[0], rootId: status[1], peers: status[2], dispersionUs: status[3],
         role: status[4], synced: status[5] === 1, meshOffsetUs: status[6],
         beatPhase: status[7], isRoot: status[8] === 1, driftPpm: node.driftPpm,
+        changeInMs: status[9],
         offsetUs: node.offsetUs, pan: node.pan, gain: node.gain, mute: node.mute,
         solo: node.solo, radio: node.radio,
       };

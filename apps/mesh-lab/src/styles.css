@@ -61,6 +61,11 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 .control-section { padding: 18px 20px; border-bottom: 1px solid var(--line); }
 .control-section + .control-section { padding-top: 17px; }
 .monitor-level { margin-top: 18px; }
+.change-countdown { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+.change-countdown > span { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
+.change-countdown output { color: var(--yellow); font: 20px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.change-countdown > div { grid-column: 1 / -1; height: 4px; overflow: hidden; background: #262e2b; }
+.change-countdown i { display: block; height: 100%; background: var(--yellow); transition: width 100ms linear; }
 .section-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; font-size: 12px; }
 .section-title strong, .switch-row strong, .mini-switch span { display: inline-flex; align-items: center; gap: 7px; }
 .section-title span { color: var(--yellow); font-size: 9px; }

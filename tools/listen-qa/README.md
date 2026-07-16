@@ -6,12 +6,25 @@ consistency, stereo output, and clipping. An optional CLAP pass compares the
 audio with positive lo-fi and negative failure descriptions. CLAP is advisory;
 a human listening rejection always overrides it.
 
-Build WASM and render the default three-module composition:
+Run the complete technical iteration loop with:
+
+```sh
+LISTEN_QA_PYTHON=~/.cache/lofi-tools/audio-analysis/.venv/bin/python \
+NUMBA_CACHE_DIR=/tmp/lofi-numba-cache \
+  tools/listen-qa/iterate.sh
+```
+
+It rebuilds the production WASM, renders three complete 96-second phrase arcs,
+renders each isolated bass role, checks phrase evolution, and verifies bass
+level consistency and upper-band energy. Set `LISTEN_QA_MODELS=1` to add the
+slower cached CLAP and Audiobox Aesthetics passes.
+
+Build WASM and render one complete five-module evolution arc:
 
 ```sh
 npm run build:web
 node tools/listen-qa/render.mjs \
-  --seed 2 --nodes 3 --duration 45 \
+  --seed 2 --nodes 5 --duration 96 \
   --output target/listen-qa/seed-2.wav
 ```
 

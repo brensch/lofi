@@ -4,7 +4,8 @@ use lofi_core::mesh::{SyncEngine, SyncQuality};
 use lofi_core::music::arrangement::{Arrangement, Role, BARS_PER_PHRASE, ROLES};
 use lofi_core::music::kit::kit_for;
 use lofi_core::music::{
-    color, render_role, signature_for, BeatCtx, LoopScene, Lowpass, PackedCatalog, AI_CATALOG,
+    color, render_role, signature_for, BeatCtx, BeatEvolution, LoopScene, Lowpass, PackedCatalog,
+    AI_CATALOG,
 };
 use lofi_core::transport::Transport;
 use lofi_core::{Micros, NodeId};
@@ -17,6 +18,7 @@ pub const DEFAULT_SAMPLE_RATE: u32 = 48_000;
 const TICKS_PER_BAR: i64 = 384;
 /// Master lowpass cutoff — rolls off the highs for the lofi tone.
 const LOWPASS_HZ: f32 = 3_600.0;
+const BASS_LOWPASS_HZ: f32 = 420.0;
 /// Peak headroom when converting the f32 mix to i16.
 const OUTPUT_AMPLITUDE: f32 = 18_000.0;
 
@@ -65,6 +67,7 @@ pub struct Device {
     events: EventQueue<EVENT_CAPACITY>,
     running: bool,
     lowpass: Lowpass,
+    bass_lowpass: Lowpass,
     lowpass_cutoff_hz: f32,
 }
 
@@ -85,6 +88,7 @@ impl Device {
             events: EventQueue::new(),
             running: true,
             lowpass: Lowpass::new(LOWPASS_HZ, DEFAULT_SAMPLE_RATE, 0.707),
+            bass_lowpass: Lowpass::new(BASS_LOWPASS_HZ, DEFAULT_SAMPLE_RATE, 0.707),
             lowpass_cutoff_hz: LOWPASS_HZ,
         }
     }
@@ -92,6 +96,7 @@ impl Device {
     pub fn with_sample_rate(mut self, sample_rate: u32) -> Self {
         self.sample_rate = sample_rate.max(1);
         self.lowpass = Lowpass::new(self.lowpass_cutoff_hz, self.sample_rate, 0.707);
+        self.bass_lowpass = Lowpass::new(BASS_LOWPASS_HZ, self.sample_rate, 0.707);
         self
     }
 
@@ -179,6 +184,7 @@ impl Device {
                 *sample = 0;
             }
             self.lowpass.reset();
+            self.bass_lowpass.reset();
             return;
         }
 
@@ -191,13 +197,18 @@ impl Device {
             .tick_at(block_mesh)
             .div_euclid(TICKS_PER_BAR * BARS_PER_PHRASE);
         let arrangement = Arrangement::at(self.seed, roster.ids(), phrase);
+        let previous_arrangement = Arrangement::at(self.seed, roster.ids(), phrase - 1);
         let kit = kit_for(self.seed);
         let signature = signature_for(self.seed);
         let mut roles = [false; ROLES.len()];
         for (j, role) in ROLES.iter().enumerate() {
             roles[j] = role.assigned_to(roster.my_index(), roster.len());
         }
-        let ctx = BeatCtx::new(self.transport, self.scene);
+        let ctx = BeatCtx::new(self.transport, self.scene).with_evolution(BeatEvolution {
+            previous: previous_arrangement.params,
+            current: arrangement.params,
+            phrase,
+        });
 
         // The vibe's master lowpass; retune the biquad only when the vibe changes.
         let mut tone = signature.blend_tone(kit.tone);
@@ -215,7 +226,12 @@ impl Device {
             let mut dry = 0.0;
             for (j, role) in ROLES.iter().enumerate() {
                 if roles[j] {
-                    dry += render_role(*role, mesh_us, ctx);
+                    let contribution = render_role(*role, mesh_us, ctx);
+                    dry += if *role == Role::Low {
+                        self.bass_lowpass.process(contribution)
+                    } else {
+                        contribution
+                    };
                 }
             }
             let colored = color(dry, mesh_us, self.sample_rate, tone);
@@ -270,6 +286,14 @@ impl Device {
         let roster = self.engine.roster(now_local_us);
         let bar = tick.div_euclid(TICKS_PER_BAR);
         let phrase = bar.div_euclid(BARS_PER_PHRASE);
+        let phrase_ticks = TICKS_PER_BAR * BARS_PER_PHRASE;
+        let next_phrase_tick = (tick.div_euclid(phrase_ticks) + 1) * phrase_ticks;
+        let change_in_millis = self
+            .transport
+            .root_time_for_tick(next_phrase_tick)
+            .saturating_sub(mesh_us)
+            .div_euclid(1_000)
+            .clamp(0, u32::MAX as i64) as u32;
         let arrangement = Arrangement::at(self.seed, roster.ids(), phrase);
 
         DisplayState {
@@ -280,6 +304,7 @@ impl Device {
             codename: arrangement.codename(),
             next_codename: Arrangement::next_codename(self.seed, roster.ids(), phrase),
             bars_to_next: (BARS_PER_PHRASE - bar.rem_euclid(BARS_PER_PHRASE)) as u8,
+            change_in_millis,
             peers: quality.peers,
             sync_error_us: quality.dispersion_us as Micros,
             beat_phase_milli: ((beat_phase * 1000) / ticks_per_bar.max(1)) as u16,
@@ -326,5 +351,19 @@ mod tests {
         assert!(!state.playing);
         assert_eq!(state.node_id, 1);
         assert_eq!(state.peers, 0);
+    }
+
+    #[test]
+    fn display_counts_down_to_the_shared_phrase_boundary() {
+        let dev = Device::new(
+            1,
+            DeviceVoice::new(880, ArpDirection::Up),
+            Transport::new(0, 80_000, 96),
+            1,
+        );
+        assert_eq!(dev.display_state(0).change_in_millis, 24_000);
+        assert_eq!(dev.display_state(3_000_000).change_in_millis, 21_000);
+        assert_eq!(dev.display_state(23_500_000).change_in_millis, 500);
+        assert_eq!(dev.display_state(24_000_000).change_in_millis, 24_000);
     }
 }

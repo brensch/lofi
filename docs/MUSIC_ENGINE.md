@@ -14,8 +14,8 @@ another. This is the central musical invariant.
 
 ## Scene Selection
 
-`PackedCatalog::loop_scene` selects a melody or harmony anchor from the shared
-seed, then resolves matching source hashes for:
+`PackedCatalog::loop_scene` selects a reviewed melody-backed anchor from the
+shared session seed, then resolves matching source hashes for:
 
 - four one-bar drum loops with phrase phases `0..3`;
 - transient-aligned kick, snare, and hat one-shots;
@@ -24,9 +24,25 @@ seed, then resolves matching source hashes for:
 - an optional four-bar harmony loop;
 - one four-bar texture loop.
 
-The lookup runs only when a device starts, changes seed, or changes catalogue.
-The selected `LoopScene` is copied into the device. There is no catalogue scan
-inside the per-sample render loop.
+Harmony-only material remains in the catalogue as a fallback for future packs,
+but it is not automatically selected while melody-backed scenes are available.
+The lookup runs only when a device starts or changes catalogue. The selected
+`LoopScene` is copied into the device. There is no catalogue scan inside the
+per-sample render loop.
+
+## Organic Evolution
+
+The experience has no user-facing tape or music-set selector. `Arrangement`
+derives a new bounded parameter set at every shared eight-bar boundary. Those
+parameters change drum density and fills, stem prominence, texture balance, and
+motif activity inside a four-phrase energy arc. The result evolves continually
+without replacing the source-coherent scene or shuffling unrelated samples.
+
+All modules resolve the same phrase from mesh time, so structural changes land
+on the same sample-aligned boundary. Continuous stem levels use a smoothstep
+crossfade over the first beat of the new phrase. Discrete drum-pattern changes
+land directly on the boundary. The browser exposes the same transport boundary
+as a countdown rather than exposing the internal seed.
 
 ## Distributed Roles
 
@@ -67,7 +83,8 @@ For each DMA/Web Audio block, `Device::render_audio`:
 2. resolves the roster and this device's roles;
 3. reads the already selected `LoopScene`;
 4. renders only those roles from flash-resident G.711 mu-law samples;
-5. applies bounded saturation, vinyl air, and the kit low-pass;
+5. applies the bass-role low-pass, bounded saturation, vinyl air, and the kit
+   low-pass;
 6. converts to signed 16-bit PCM with fixed headroom.
 
 The core is `no_std`, allocation-free, lock-free, and contains no filesystem,
@@ -83,9 +100,7 @@ browser-path render gate in [Listen QA](LISTEN_QA.md).
 
 ## Current Limitations
 
-- Only three source scenes currently have enough aligned tonal stems to play.
-- Four-bar repetition is deliberate until more reviewed source scenes exist.
-- Arrangement codenames and feature cards currently affect display state and
-  tone character, not stem selection within a scene.
+- Two melody-backed source scenes currently meet the automatic-selection gate.
+- Four-bar source loops repeat inside an evolving eight-bar arrangement phrase.
 - Commercial release still requires human listening and rights approval for
   every shipped source, regardless of automated scores.

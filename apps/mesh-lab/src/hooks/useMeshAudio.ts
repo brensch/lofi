@@ -147,20 +147,6 @@ export function useMeshAudio(initialSeed: number, initialVolume: number) {
     if (context && gain) gain.gain.setTargetAtTime(value, context.currentTime, 0.015);
   }, []);
 
-  const setSeed = useCallback(
-    (value: number, restoreVolume: number) => {
-      const context = contextRef.current;
-      const gain = gainRef.current;
-      if (!context || !gain) return;
-      gain.gain.setTargetAtTime(0, context.currentTime, 0.012);
-      window.setTimeout(() => {
-        send({ type: "seed", value });
-        gain.gain.setTargetAtTime(restoreVolume, context.currentTime, 0.025);
-      }, 80);
-    },
-    [send],
-  );
-
   useEffect(
     () => () => {
       workletRef.current?.disconnect();
@@ -175,7 +161,6 @@ export function useMeshAudio(initialSeed: number, initialVolume: number) {
     error,
     removeNode,
     runtime,
-    setSeed,
     setVolume,
     telemetry,
     toggle,

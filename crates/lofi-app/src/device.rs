@@ -203,7 +203,7 @@ impl Device {
         let mut tone = signature.blend_tone(kit.tone);
         self.retune_lowpass(tone.cutoff_hz);
         // Blend the kit's baseline air with the arrangement's `dust` feature so
-        // "Dusty" audibly lifts the crackle without swamping quieter vibes.
+        // "Dusty" audibly lifts the noise bed without swamping quieter vibes.
         tone.air *= arrangement.params.dust as f32 * 0.5 + 0.4;
 
         let sr = self.sample_rate as Micros;

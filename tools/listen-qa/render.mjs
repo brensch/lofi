@@ -13,6 +13,7 @@ function parseArgs(argv) {
     output: "target/listen-qa/browser-mix.wav",
     sampleRate: 48_000,
     seed: 2,
+    solo: 0,
     wasm: "apps/mesh-lab/public/lofi_web.wasm",
     worklet: "apps/mesh-lab/src/audio/mesh-worklet.js",
   };
@@ -25,6 +26,7 @@ function parseArgs(argv) {
     else if (name === "--output") args.output = value;
     else if (name === "--sample-rate") args.sampleRate = Number(value);
     else if (name === "--seed") args.seed = Number(value);
+    else if (name === "--solo") args.solo = Number(value);
     else if (name === "--wasm") args.wasm = value;
     else if (name === "--worklet") args.worklet = value;
     else throw new Error(`unknown argument ${name}`);
@@ -80,6 +82,12 @@ const processor = new Processor({
   processorOptions: { initialNodes: args.nodes, seed: args.seed, wasmBytes },
 });
 if (processor.failed) throw new Error("worklet initialization failed");
+if (args.solo) {
+  if (!Number.isInteger(args.solo) || args.solo < 1 || args.solo > args.nodes) {
+    throw new Error("solo must identify an active node");
+  }
+  processor.handleCommand({ type: "node", id: args.solo, key: "solo", value: true });
+}
 
 const totalFrames = Math.round(args.duration * args.sampleRate);
 const left = new Float32Array(totalFrames);
@@ -95,5 +103,6 @@ for (let offset = 0; offset < totalFrames; offset += FRAME_COUNT) {
 
 writeWav(args.output, left, right, args.sampleRate);
 process.stdout.write(
-  `${args.output}: ${args.duration.toFixed(1)}s, ${args.nodes} nodes, seed ${args.seed}\n`,
+  `${args.output}: ${args.duration.toFixed(1)}s, ${args.nodes} nodes, seed ${args.seed}` +
+    `${args.solo ? `, solo node ${args.solo}` : ""}\n`,
 );

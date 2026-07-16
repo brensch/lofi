@@ -46,7 +46,7 @@ class LofiProcessor extends AudioWorkletProcessor {
     }
     exports.lofi_init(Math.round(sampleRate), this.seed, id);
     const spread = this.nodes.length - (Math.max(3, this.nodes.length + 1) - 1) / 2;
-    const pan = Math.max(-0.75, Math.min(0.75, spread * 0.55));
+    const pan = Math.max(-0.7, Math.min(0.7, spread * 0.5));
     this.nodes.push({
       id,
       instance,
@@ -55,7 +55,7 @@ class LofiProcessor extends AudioWorkletProcessor {
       driftPpm: id === 1 ? 0 : id % 2 === 0 ? 65 : -48,
       pan,
       currentPan: pan,
-      gain: 0.82,
+      gain: 0.9,
       currentGain: 0,
       mute: false,
       solo: false,

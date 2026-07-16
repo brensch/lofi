@@ -93,14 +93,14 @@ def align_one_shot(audio: np.ndarray, kind: str) -> np.ndarray:
     crossings = np.flatnonzero(np.abs(audio[:search_end]) >= threshold)
     if not len(crossings):
         return audio
-    pre_roll_seconds = 0.001 if kind in DRUM_KINDS else 0.003
+    pre_roll_seconds = 0.0005 if kind in DRUM_KINDS else 0.003
     start = max(0, int(crossings[0]) - int(TARGET_RATE * pre_roll_seconds))
     return audio[start:]
 
 
 def fade_one_shot(audio: np.ndarray, kind: str) -> np.ndarray:
     result = audio.copy()
-    fade_seconds = 0.0005 if kind in DRUM_KINDS else 0.002
+    fade_seconds = 0.00025 if kind in DRUM_KINDS else 0.002
     fade_in = min(len(result), max(2, int(TARGET_RATE * fade_seconds)))
     fade_out = min(len(result), int(TARGET_RATE * 0.025))
     if fade_in:
@@ -120,6 +120,50 @@ def smooth_loop(audio: np.ndarray) -> np.ndarray:
     result[:count] *= fade
     result[-count:] *= fade[::-1]
     return result
+
+
+def measure_source_grid(audio: np.ndarray, bpm: int) -> tuple[float, float]:
+    """Return source beat phase and period relative to the requested grid."""
+    target_period = 60.0 / max(bpm, 1)
+    envelope = librosa.onset.onset_strength(y=audio, sr=TARGET_RATE, hop_length=256)
+    _, beat_frames = librosa.beat.beat_track(
+        onset_envelope=envelope,
+        sr=TARGET_RATE,
+        hop_length=256,
+        start_bpm=float(bpm),
+        tightness=100,
+    )
+    beat_times = librosa.frames_to_time(beat_frames, sr=TARGET_RATE, hop_length=256)
+    if len(beat_times) < 4:
+        return 0.0, target_period
+    intervals = np.diff(beat_times)
+    multiples = np.maximum(1.0, np.round(intervals / target_period))
+    measured_period = float(np.median(intervals / multiples))
+    phases = (beat_times + target_period / 2.0) % target_period - target_period / 2.0
+    phase = float(np.median(phases))
+    return phase, measured_period
+
+
+def conform_to_grid(
+    audio: np.ndarray, phase_seconds: float, measured_period: float, bpm: int
+) -> np.ndarray:
+    """Apply one source-wide tempo/phase map before any stem is sliced."""
+    target_period = 60.0 / max(bpm, 1)
+    stretch = target_period / max(measured_period, 1e-6)
+    output_length = max(1, round(len(audio) * stretch))
+    positions = np.linspace(0.0, max(len(audio) - 1, 0), output_length)
+    conformed = np.interp(positions, np.arange(len(audio)), audio).astype(np.float32)
+    shift = round(phase_seconds * stretch * TARGET_RATE)
+    if shift > 0:
+        conformed = np.concatenate(
+            [conformed[shift:], np.zeros(shift, dtype=np.float32)]
+        )
+    elif shift < 0:
+        amount = -shift
+        conformed = np.concatenate(
+            [np.zeros(amount, dtype=np.float32), conformed[:-amount]]
+        )
+    return conformed
 
 
 def encode_mulaw(audio: np.ndarray) -> bytes:
@@ -213,6 +257,9 @@ class PackBuilder:
             audio = smooth_loop(audio)
         else:
             audio = fade_one_shot(align_one_shot(audio, kind), kind)
+            if kind in DRUM_KINDS and len(audio) < int(TARGET_RATE * 0.03):
+                self.reject("short_drum_hit")
+                return
         audio, applied_gain = normalize(audio)
         identity = fingerprint(audio)
         dedupe_key = (kind, identity)
@@ -348,10 +395,24 @@ class PackBuilder:
 
 def harvest_run(builder: PackBuilder, run: Path, source: dict[str, object]) -> None:
     stems = run / "stems"
+    drum_path = stems / "drums.wav"
+    if not drum_path.exists():
+        builder.reject("missing_stem")
+        return
+    requested_bpm = int(source["bpm"])
+    phase_seconds, measured_period = measure_source_grid(
+        load_mono(drum_path), requested_bpm
+    )
+    target_period = 60.0 / requested_bpm
+    source["timing_alignment"] = {
+        "phase_ms": round(phase_seconds * 1_000.0, 3),
+        "measured_beat_ms": round(measured_period * 1_000.0, 3),
+        "stretch_ratio": round(target_period / measured_period, 6),
+    }
     beats_per_bar = 4
-    bar_frames = int(TARGET_RATE * 60.0 / int(source["bpm"]) * beats_per_bar)
+    bar_frames = int(TARGET_RATE * 60.0 / requested_bpm * beats_per_bar)
     stem_kinds = {
-        "drums": "drum_loop",
+        "drums": None,
         "bass": "bass_loop",
         "guitar": "melody_loop",
         "piano": "harmony_loop",
@@ -362,23 +423,22 @@ def harvest_run(builder: PackBuilder, run: Path, source: dict[str, object]) -> N
         if not path.exists():
             builder.reject("missing_stem")
             continue
-        audio = load_mono(path)
-        loop_bars = 1 if stem == "drums" else 4
-        frames = bar_frames * loop_bars
-        max_loops = 4 if stem == "drums" else 1
-        for loop_index, start in enumerate(range(0, len(audio) - frames + 1, frames)):
-            if loop_index >= max_loops:
-                break
-            phase = (start // bar_frames) % 4
-            builder.add(
-                audio[start : start + frames],
-                kind=loop_kind,
-                source=source,
-                looped=True,
-                bars=loop_bars,
-                phase=phase,
-                tags=[stem, "ai-harvest"],
-            )
+        audio = conform_to_grid(
+            load_mono(path), phase_seconds, measured_period, requested_bpm
+        )
+        if loop_kind is not None:
+            loop_bars = 4
+            frames = bar_frames * loop_bars
+            if len(audio) >= frames:
+                builder.add(
+                    audio[:frames],
+                    kind=loop_kind,
+                    source=source,
+                    looped=True,
+                    bars=loop_bars,
+                    phase=0,
+                    tags=[stem, "ai-harvest"],
+                )
 
         envelope = librosa.onset.onset_strength(y=audio, sr=TARGET_RATE, hop_length=256)
         onset_frames = librosa.onset.onset_detect(
@@ -388,14 +448,24 @@ def harvest_run(builder: PackBuilder, run: Path, source: dict[str, object]) -> N
             backtrack=True,
             units="samples",
         )
-        for onset in onset_frames[:MAX_ONE_SHOTS_PER_STEM]:
-            onset = max(0, int(onset) - int(TARGET_RATE * 0.008))
+        selected_onsets = onset_frames[:MAX_ONE_SHOTS_PER_STEM]
+        for onset_index, detected_onset in enumerate(selected_onsets):
+            onset = max(0, int(detected_onset) - int(TARGET_RATE * 0.008))
             if stem == "drums":
                 probe = audio[onset : onset + int(TARGET_RATE * 0.09)]
                 if len(probe) < 128:
                     continue
                 kind = classify_drum(probe)
-                duration = {"kick": 0.7, "snare": 0.65, "hat": 0.35}[kind]
+                max_duration = {"kick": 0.45, "snare": 0.4, "hat": 0.2}[kind]
+                next_onset = (
+                    int(onset_frames[onset_index + 1])
+                    if onset_index + 1 < len(onset_frames)
+                    else len(audio)
+                )
+                duration = min(
+                    max_duration,
+                    max(0.03, (next_onset - int(detected_onset)) / TARGET_RATE),
+                )
                 root = None
                 confidence = 1.0
             elif stem in ("bass", "guitar", "piano", "other"):

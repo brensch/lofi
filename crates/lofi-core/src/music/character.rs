@@ -2,12 +2,12 @@
 //! clean sample mix into a lofi record.
 //!
 //! Everything here is a pure function of *mesh time* (never per-node state), so
-//! the wobble and crackle are identical on every box — the mesh drifts as one
+//! the wobble and noise bed are identical on every box — the mesh drifts as one
 //! tape, not a room full of slightly different ones. The one stateful piece, the
 //! master lowpass, lives in `fx` because an IIR needs history; its cutoff comes
 //! from the kit's [`Tone`].
 
-use super::dsp::{fast_decay, noise, sin_turns};
+use super::dsp::{noise, sin_turns};
 use super::kit::Tone;
 use crate::Micros;
 
@@ -21,28 +21,13 @@ pub fn warble(mesh_us: Micros, tone: Tone) -> f32 {
     1.0 + tone.wow * wow + tone.flutter * flutter
 }
 
-/// The vinyl air bed: steady hiss plus sparse crackle pops, scaled by `air`.
+/// A quiet vinyl air bed without impulsive clicks, scaled by `air`.
 /// `nz` is a per-sample noise index (a deterministic function of mesh time).
-pub fn vinyl(nz: u32, sample_rate: u32, air: f32) -> f32 {
+pub fn vinyl(nz: u32, _sample_rate: u32, air: f32) -> f32 {
     if air <= 0.0 {
         return 0.0;
     }
-    let hiss = noise(nz ^ 0x9e37_79b9) * 0.0015;
-
-    // Evaluate one pop candidate every half-second, then give accepted events a
-    // short decay. The old per-sample gate produced hundreds of clicks a second.
-    let interval = (sample_rate / 2).max(1);
-    let bucket = nz / interval;
-    let age_samples = nz % interval;
-    let gate = noise(bucket ^ 0xa53c_91e7);
-    let age = age_samples as f32 / sample_rate.max(1) as f32;
-    let pop = if gate > 0.7 && age < 0.012 {
-        let shape = fast_decay(age, 0.0035);
-        noise(bucket.wrapping_mul(2_654_435_761)) * 0.035 * shape
-    } else {
-        0.0
-    };
-    (hiss + pop) * air
+    noise(nz ^ 0x9e37_79b9) * 0.0015 * air
 }
 
 #[cfg(test)]
@@ -73,10 +58,12 @@ mod tests {
     }
 
     #[test]
-    fn vinyl_pops_are_sparse() {
-        let loud = (0..480_000u32)
-            .filter(|&i| vinyl(i, 48_000, 1.0).abs() > 0.01)
-            .count();
-        assert!(loud < 1_000, "vinyl produced {loud} loud samples in 10s");
+    fn vinyl_bed_has_no_impulsive_clicks() {
+        let mut previous = vinyl(0, 48_000, 1.0);
+        for index in 1..480_000u32 {
+            let current = vinyl(index, 48_000, 1.0);
+            assert!((current - previous).abs() < 0.004);
+            previous = current;
+        }
     }
 }

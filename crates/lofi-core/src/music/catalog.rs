@@ -62,7 +62,9 @@ pub struct PackedElement {
 #[derive(Clone, Copy, Debug)]
 pub struct LoopScene {
     pub source_hash: u32,
-    pub drums: [Option<PackedElement>; 4],
+    pub kick: Option<PackedElement>,
+    pub snare: Option<PackedElement>,
+    pub hat: Option<PackedElement>,
     pub bass: Option<PackedElement>,
     pub melody: Option<PackedElement>,
     pub harmony: Option<PackedElement>,
@@ -131,13 +133,11 @@ impl PackedCatalog {
             self.choose(ElementKind::HarmonyLoop, (selected - melodies) as u64)?
         };
         let source_hash = anchor.source_hash;
-        let mut drums = [None; 4];
-        for (phase, slot) in drums.iter_mut().enumerate() {
-            *slot = self.matching_loop(ElementKind::DrumLoop, source_hash, phase as u8);
-        }
         Some(LoopScene {
             source_hash,
-            drums,
+            kick: self.matching_element(ElementKind::Kick, source_hash, 0),
+            snare: self.matching_element(ElementKind::Snare, source_hash, 0),
+            hat: self.matching_element(ElementKind::Hat, source_hash, 0),
             bass: self.matching_loop(ElementKind::BassLoop, source_hash, 0),
             melody: self.matching_loop(ElementKind::MelodyLoop, source_hash, 0),
             harmony: self.matching_loop(ElementKind::HarmonyLoop, source_hash, 0),
@@ -210,6 +210,16 @@ impl PackedCatalog {
         source_hash: u32,
         phase: u8,
     ) -> Option<PackedElement> {
+        self.matching_element(kind, source_hash, phase)
+            .filter(|element| element.looped)
+    }
+
+    fn matching_element(
+        &'static self,
+        kind: ElementKind,
+        source_hash: u32,
+        phase: u8,
+    ) -> Option<PackedElement> {
         let table = HEADER_SIZE + kind as usize * 4;
         let start = self.u16(table) as usize;
         let count = self.len_for_kind(kind);
@@ -245,9 +255,9 @@ mod tests {
     fn shipped_catalog_is_valid_and_substantial() {
         assert!(AI_CATALOG.is_valid());
         assert!(AI_CATALOG.len() >= 100);
-        assert!(AI_CATALOG.len_for_kind(ElementKind::Kick) >= 30);
+        assert!(AI_CATALOG.len_for_kind(ElementKind::Kick) >= 20);
         assert!(AI_CATALOG.len_for_kind(ElementKind::Snare) >= 20);
-        assert!(AI_CATALOG.len_for_kind(ElementKind::Hat) >= 30);
+        assert!(AI_CATALOG.len_for_kind(ElementKind::Hat) >= 20);
         assert!(AI_CATALOG.len_for_kind(ElementKind::BassNote) >= 50);
         assert!(AI_CATALOG.len_for_kind(ElementKind::LeadNote) >= 20);
         assert!(AI_CATALOG.len_for_kind(ElementKind::KeysNote) >= ROOT_VARIANTS);
@@ -286,17 +296,23 @@ mod tests {
     fn loop_scenes_never_mix_source_performances() {
         for selector in 0..16 {
             let scene = AI_CATALOG.loop_scene(selector).unwrap();
-            assert!(scene.drums.into_iter().all(|element| element.is_some()));
+            assert!(scene.kick.is_some());
+            assert!(scene.snare.is_some());
+            assert!(scene.hat.is_some());
             assert!(scene.bass.is_some());
             assert!(scene.texture.is_some());
             assert!(scene.melody.is_some() || scene.harmony.is_some());
-            let elements = scene.drums.into_iter().chain([
+            let elements = [
+                scene.kick,
+                scene.snare,
+                scene.hat,
                 scene.bass,
                 scene.melody,
                 scene.harmony,
                 scene.texture,
-            ]);
+            ];
             assert!(elements
+                .into_iter()
                 .flatten()
                 .all(|element| element.source_hash == scene.source_hash));
         }
@@ -322,6 +338,24 @@ mod tests {
                 assert!(
                     onset * 800 <= sample.sample_rate() as usize,
                     "{kind:?} selector {selector} starts at frame {onset}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shipped_drum_hits_end_before_the_next_part() {
+        for (kind, max_ms) in [
+            (ElementKind::Kick, 450),
+            (ElementKind::Snare, 400),
+            (ElementKind::Hat, 200),
+        ] {
+            for selector in 0..AI_CATALOG.len_for_kind(kind) {
+                let sample = AI_CATALOG.choose(kind, selector as u64).unwrap().sample;
+                assert!(
+                    sample.len() as u64 * 1_000 <= sample.sample_rate() as u64 * max_ms,
+                    "{kind:?} selector {selector} is too long: {} frames",
+                    sample.len()
                 );
             }
         }

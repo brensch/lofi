@@ -96,6 +96,13 @@ def evaluate(path: Path, use_clap: bool, use_aesthetics: bool) -> dict[str, obje
     harmonic, _ = librosa.effects.hpss(mono)
     chroma = librosa.feature.chroma_cqt(y=harmonic, sr=rate, hop_length=hop)
     tempo, beats = librosa.beat.beat_track(y=mono, sr=rate, start_bpm=80.0)
+    beat_times = librosa.frames_to_time(beats, sr=rate, hop_length=hop)
+    beat_intervals = np.diff(beat_times)
+    beat_interval_jitter_ms = (
+        float(np.percentile(np.abs(beat_intervals - np.median(beat_intervals)), 90) * 1_000.0)
+        if len(beat_intervals)
+        else float("inf")
+    )
     onsets = librosa.onset.onset_detect(y=mono, sr=rate, units="time", backtrack=True)
     left_rms = float(np.sqrt(np.mean(stereo[:, 0] ** 2)))
     right_rms = float(np.sqrt(np.mean(stereo[:, 1] ** 2)))
@@ -108,6 +115,7 @@ def evaluate(path: Path, use_clap: bool, use_aesthetics: bool) -> dict[str, obje
         "crest_db": decibels(peak / max(rms, 1e-9)),
         "tempo_bpm": float(np.asarray(tempo).item()),
         "beat_count": len(beats),
+        "beat_interval_jitter_ms": beat_interval_jitter_ms,
         "onsets_per_second": len(onsets) / max(len(mono) / rate, 1e-9),
         "scale_consistency": scale_consistency(chroma, rate, hop),
         "stereo_correlation": correlation,
@@ -120,6 +128,7 @@ def evaluate(path: Path, use_clap: bool, use_aesthetics: bool) -> dict[str, obje
         "dynamic_range": 8.0 <= metrics["crest_db"] <= 24.0,
         "tempo": 68.0 <= metrics["tempo_bpm"] <= 86.0
         or 34.0 <= metrics["tempo_bpm"] <= 43.0,
+        "rhythm_consistency": metrics["beat_interval_jitter_ms"] <= 20.0,
         "tonal_center": metrics["scale_consistency"] >= 0.61,
         "stereo_output": metrics["channel_balance_db"] <= 3.0,
         "no_clipping": metrics["clipped_samples"] == 0,

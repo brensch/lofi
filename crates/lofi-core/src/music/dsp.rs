@@ -17,20 +17,6 @@ pub fn sin_turns(turns: f32) -> f32 {
     a + (b - a) * fraction
 }
 
-/// Cheap bounded decay approximation for ducking and crackle envelopes.
-#[inline]
-pub fn fast_decay(age: f32, time_constant: f32) -> f32 {
-    if age <= 0.0 {
-        return 1.0;
-    }
-    let x = age / time_constant.max(1e-4);
-    if x >= 12.0 {
-        return 0.0;
-    }
-    let x2 = x * x;
-    1.0 / (1.0 + x + 0.48 * x2 + 0.235 * x2 * x)
-}
-
 /// Smooth cubic saturation with no transcendental call in the audio loop.
 #[inline]
 pub fn soft_clip(x: f32) -> f32 {
@@ -65,7 +51,6 @@ mod tests {
             assert!(noise(index).abs() <= 1.0);
             assert!(sin_turns(index as f32 * 0.013).abs() <= 1.0);
         }
-        assert_eq!(fast_decay(20.0, 0.1), 0.0);
         assert_eq!(soft_clip(2.0), 1.0);
         assert_eq!(soft_clip(-2.0), -1.0);
     }

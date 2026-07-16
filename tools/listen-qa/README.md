@@ -1,10 +1,10 @@
 # Listen QA
 
 This workstation-only loop renders the real browser AudioWorklet and WASM path
-to a WAV, then checks level, dynamics, tempo, tonal consistency, stereo output,
-and clipping. An optional CLAP pass compares the audio with positive lo-fi and
-negative failure descriptions. CLAP is advisory; a human listening rejection
-always overrides it.
+to a WAV, then checks level, dynamics, tempo, beat-interval jitter, tonal
+consistency, stereo output, and clipping. An optional CLAP pass compares the
+audio with positive lo-fi and negative failure descriptions. CLAP is advisory;
+a human listening rejection always overrides it.
 
 Build WASM and render the default three-module composition:
 

@@ -41,12 +41,12 @@ This executes the production AudioWorklet and one WASM instance per module,
 including the simulated mesh substrate and browser listener mix. See
 [Listen QA](docs/LISTEN_QA.md) for the automated and human acceptance gates.
 
-The current groove is sample-only. A fixed 7.49 MiB pack supplies 216 harvested
+The current groove is sample-only. A fixed 5.95 MiB pack supplies 192 harvested
 elements. The audible path selects one source-coherent scene per seed and deals
-its phase-aligned drum, bass, harmony, melody, and texture loops across modules.
+source-matched, transient-bounded drum one-shots plus grid-conformed bass,
+harmony, melody, and texture loops across modules.
 No oscillator, unrelated sample shuffle, allocator, or mutable playback cursor
-runs in the audio path. One-shots remain catalogued for future arrangements but
-are not audible until they pass the same listen-QA gate as the loop scenes.
+runs in the audio path.
 
 ## Hardware Direction
 

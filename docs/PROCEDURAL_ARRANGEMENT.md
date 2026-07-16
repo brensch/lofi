@@ -7,10 +7,13 @@ context, so the result sounded disconnected and failed listen QA.
 
 ## Active Arrangement
 
-The shared seed now selects one `LoopScene`. All audible stems in that scene
-carry the same `source_hash` and original four-bar phase. The mesh roster deals
-five playback roles across available modules, and every module derives its loop
-position from the same transport tick.
+The shared seed now selects one `LoopScene`. All audible samples in that scene
+carry the same `source_hash`; tonal stems retain their original four-bar phase.
+Kick, snare, and hats are scheduled on a fixed shared grid from aligned
+one-shots. The forge first conforms all stems from a source to one measured beat
+map and prevents each drum hit from carrying the following source transient.
+The mesh roster deals five playback roles across available modules, and every
+module derives hit and loop positions from the same transport tick.
 
 This deliberately trades infinite note-level mutation for musical coherence.
 Variation currently comes from:

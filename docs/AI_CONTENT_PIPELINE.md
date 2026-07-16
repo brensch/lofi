@@ -39,16 +39,18 @@ The reviewable preview of the embedded implementation is
 
 The firmware content currently contains:
 
-- 216 sample elements in a 7.49 MiB fixed binary pack;
-- 94 kick, snare, and hat variants;
-- 95 root-tagged bass, keys, and lead one-shots;
-- 27 phase-aligned drum, bass, harmony, melody, and texture loops;
-- source hashes and phrase phases used to assemble coherent loop scenes;
+- 192 sample elements in a 5.95 MiB fixed binary pack;
+- 82 kick, snare, and hat variants;
+- 99 root-tagged bass, keys, and lead one-shots;
+- 11 phase-aligned bass, harmony, melody, and texture loops;
+- source-wide tempo/downbeat maps, source hashes, bounded drum hits, and phrase
+  phases used in coherent scenes;
 - tone signatures used for bounded per-device coloration.
 
 No MIDI file or synthesized note voice ships in the runtime. The current audible
-path uses only aligned loop scenes. Root-tagged one-shots remain in the catalogue
-for future source-compatible arrangements but are not currently scheduled.
+path uses grid-conformed tonal loops and source-matched drum one-shots.
+Root-tagged tonal one-shots remain in the catalogue for future source-compatible
+arrangements but are not currently scheduled.
 
 ## Reproducing A Report
 

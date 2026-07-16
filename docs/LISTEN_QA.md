@@ -8,20 +8,30 @@ The prior one-shot compositor is explicitly rejected. User listening reported
 that it sounded bad even though a genre classifier called it lo-fi. Human
 rejection overrides every automated score.
 
-The current candidate uses source-coherent loop scenes. On 2026-07-16, seeds
-`0`, `1`, and `2` were each rendered for 45 seconds with three modules through
-the real `mesh-worklet.js` and `lofi_web.wasm` path.
+The current candidate uses source-coherent, grid-conformed stem scenes and
+transient-bounded drum hits. On 2026-07-16, seeds `0`, `1`, and `2` were each
+rendered for 45 seconds with three modules through the real `mesh-worklet.js`
+and `lofi_web.wasm` path.
 
-| Seed | Tempo | Scale consistency | Stereo balance | CLAP lo-fi | Enjoyment | Production | Result |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| 0 | 39.9 BPM half-time | 0.638 | 0.15 dB | 97.7% | 7.80/10 | 7.62/10 | PASS |
-| 1 | 80.4 BPM | 0.622 | 2.76 dB | 99.0% | 7.54/10 | 7.76/10 | PASS |
-| 2 | 80.4 BPM | 0.630 | 0.08 dB | 99.1% | 7.50/10 | 7.64/10 | PASS |
+| Seed | Tempo | Beat jitter | Onsets/s | Scale consistency | Stereo balance | Result |
+| ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 0 | 80.36 BPM | 10.67 ms | 3.82 | 0.648 | 2.07 dB | PASS |
+| 1 | 80.36 BPM | 10.67 ms | 2.91 | 0.643 | 2.84 dB | PASS |
+| 2 | 80.36 BPM | 10.67 ms | 2.58 | 0.643 | 0.84 dB | PASS |
 
 All three also pass level, headroom, crest factor, clipping, and active-stereo
-checks. No render contains a clipped sample. The rejected baseline had lower
-scale consistency (`0.601`), excessive onset density (`5.58/s`), and failed the
-stereo-balance gate.
+checks. No render contains a clipped sample. The 10.67 ms figure is one
+512-sample analysis hop, not measured transport drift.
+
+An isolated five-module render placed all 30 strong kick attacks within one
+64-sample analysis hop of their scheduled boundaries over 45 seconds. Before
+the fix, a harvested 700 ms "kick" contained strong later attacks from the
+source drum performance. Drum harvesting now ends a hit before the next source
+onset. The matching Pocket render contained exactly the expected 120 attacks,
+with a worst-case 7.83 ms onset-detector offset and no off-grid events.
+Artificial vinyl impulses have also been removed from the audio path. Prior
+CLAP/Audiobox scores describe the superseded candidate and are not carried
+forward as evidence for this build.
 
 ## Reproduction
 

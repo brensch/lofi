@@ -18,6 +18,7 @@ another. This is the central musical invariant.
 seed, then resolves matching source hashes for:
 
 - four one-bar drum loops with phrase phases `0..3`;
+- transient-aligned kick, snare, and hat one-shots;
 - one four-bar bass loop;
 - an optional four-bar melody loop;
 - an optional four-bar harmony loop;
@@ -32,8 +33,8 @@ inside the per-sample render loop.
 The fixed role order is `Pulse`, `Pocket`, `Low`, `Color`, and `Motif`. Roles are
 dealt round-robin across the current mesh roster:
 
-- `Pulse`: primary drum-loop level;
-- `Pocket`: secondary drum-loop level for a separate physical speaker;
+- `Pulse`: kick on beats one and three;
+- `Pocket`: backbeats plus swung eighth-note hats;
 - `Low`: bass stem;
 - `Color`: harmony plus a restrained texture stem;
 - `Motif`: melody, or a quiet harmony fallback.
@@ -44,15 +45,19 @@ does not exist in firmware.
 
 ## Timing
 
-Every loop position is derived statelessly from `Transport` and mesh time. One
-bar is 384 ticks at 96 ticks per beat. Drum phase uses the current bar modulo
-four; longer stems restart on the same four-bar boundary. Playback rate follows
-transport BPM relative to the source BPM, so a tempo change cannot create an
-independent cursor on one box.
+Every hit and loop position is derived statelessly from `Transport` and mesh
+time. One bar is 384 ticks at 96 ticks per beat. Longer stems restart on the
+same four-bar boundary. Playback rate follows transport BPM relative to the
+source BPM, so a tempo change cannot create an independent cursor on one box.
 
-The shipped scenes run at their native 80 BPM. The packer applies a one
-millisecond squared-sine fade at both loop edges, and catalogue tests require
-every shipped loop seam to be near zero.
+Kick and snare use a fixed one-bar grid. Hats alone receive a bounded 12% offbeat
+delay; no random timing or generated drum-loop performance enters the audible
+path. Before slicing, the offline forge measures the drum performance's beat
+period and phase, then applies the same small resample and downbeat shift to
+every stem from that source. Drum one-shots end before the next detected source
+transient, with shipped durations bounded to 200 ms for hats, 400 ms for snares,
+and 450 ms for kicks. The packer also fades loop edges, and catalogue tests
+require every shipped seam to be near zero.
 
 ## Audio Path
 

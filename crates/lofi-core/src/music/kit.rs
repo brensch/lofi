@@ -11,7 +11,7 @@ pub struct Tone {
     pub cutoff_hz: f32,
     /// Master saturation amount.
     pub drive: f32,
-    /// Vinyl hiss and crackle level.
+    /// Vinyl noise-bed level.
     pub air: f32,
 }
 

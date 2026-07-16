@@ -10,7 +10,7 @@ The first physical target is ESP32-S3 N16R8 with:
 - speaker path
 - ESP-NOW radio
 
-The current development content pack is 7.49 MiB. N16R8 is therefore the
+The current development content pack is 5.95 MiB. N16R8 is therefore the
 minimum useful module, not a generous target. A production partition table
 should put the catalogue in one read-only data partition and keep firmware in
 separate OTA slots, so firmware updates do not duplicate the audio bytes.

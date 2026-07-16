@@ -37,7 +37,9 @@ cargo run -p lofi-sim -- --nodes 8 --duration-ms 18000 --sync-start-ms 2500 --gr
 
 Open `target/lofi-two-clusters-merge.wav` with headphones. Four virtual devices start on the left, four start on the right. Each side syncs internally from 2.5 seconds, then the two clusters can hear each other from 8 seconds and converge into one mesh.
 
-The current groove is generated without samples: kick, snare, hats, bass, harmony, wobble, and bitcrush are all math in `no_std` code.
+The current groove is hybrid: a 55 KB CC0 mu-law bank supplies acoustic kick,
+snare, and hats, while bass, harmony, melody, arrangement, tape character, and
+mixing remain deterministic `no_std` code.
 
 ## Hardware Direction
 

@@ -23,6 +23,8 @@ pub mod fx;
 pub mod kit;
 pub mod patch;
 pub mod progression;
+pub mod sample;
+pub mod sample_bank;
 pub mod theory;
 
 mod tables;
@@ -32,3 +34,4 @@ pub use beat::{color, render_role, BeatCtx};
 pub use fx::Lowpass;
 pub use kit::{Kit, Tone};
 pub use patch::{render_patch, Patch};
+pub use sample::{render_sample, Sample};

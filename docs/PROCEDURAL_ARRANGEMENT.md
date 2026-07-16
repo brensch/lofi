@@ -237,10 +237,10 @@ it inherits determinism for free.
 
 ### Vibes are curated bundles (`music::kit`)
 
-A `Kit` names one `Patch` per role (keys/bass/lead/pad/kick/snare/hat) plus a
-`Tone` (tape wow/flutter, master cutoff, saturation, vinyl air). A kit is a vibe:
-instruments chosen to sound like one record. Kits are selected deterministically
-from the seed, so the whole mesh lands on the same vibe.
+A `Kit` names the pitched `Patch` values (keys/bass/lead/pad), an embedded drum
+bank, and a `Tone` (tape wow/flutter, master cutoff, saturation, vinyl air). A
+kit is a vibe: instruments chosen to sound like one record. Kits are selected
+deterministically from the seed, so the whole mesh lands on the same vibe.
 
 ### Tape/vinyl character (`music::character`)
 

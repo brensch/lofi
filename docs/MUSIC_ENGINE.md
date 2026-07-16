@@ -34,7 +34,15 @@ Groove modes are modular engines. In `lofi-core`, `mode::GrooveModeEngine` is th
 - `JazzHop`: future brushed drums, upright-ish bass, extended chords
 - `AmbientStudy`: sparse drums, pads, texture
 - `DrumOnly`: percussion-focused utility role
-- sample-backed modes: static PCM one-shots mixed from flash/PSRAM
+- sample-backed modes: static mu-law one-shots decoded directly from flash
+
+## Embedded Samples
+
+The first hybrid engine replaces procedural kick, snare, and hat voices with a
+small CC0 acoustic bank. Source FLAC is converted offline to mono 22.05 kHz
+G.711 mu-law. Runtime playback is stateless, constant-time, allocation-free,
+and indexed from mesh note age, so a timing correction cannot desynchronize a
+sample cursor. Bass, keys, pads, and melody remain procedural for now.
 
 Modes must be deterministic and allocation-free in the audio path.
 

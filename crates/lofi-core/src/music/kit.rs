@@ -5,14 +5,14 @@
 //! - **Instrument presets** — `const Patch` values (`RHODES_WARM`, `BASS_SUB`,
 //!   `KICK_BOOMBAP`, …). Adding a new instrument to the world is adding a `const`
 //!   and dropping it into [`ALL_PATCHES`]; the synth engine never changes.
-//! - **Kits** — a `Kit` is a *vibe*: one coherent choice of instrument per role
-//!   plus the tape/vinyl `Tone` that glues them together. This is how snippets
-//!   "work with each other" — a kit is a curated set that sounds like one record.
+//! - **Kits** — a `Kit` is a *vibe*: coherent pitched instruments, an embedded
+//!   drum bank, and the tape/vinyl `Tone` that glues them together.
 //!
 //! Everything is selected deterministically from the shared seed, so every box in
 //! the mesh renders the same vibe with the same instruments.
 
 use super::patch::{AmpEnv, Fm, Lfo, Noiseband, Partial, Patch, PitchEnv};
+use super::sample_bank::{DrumBank, ACOUSTIC_DRUMS};
 
 // ---------------------------------------------------------------------------
 // Electric pianos / keys — the defining lofi timbre.
@@ -544,7 +544,7 @@ pub struct Tone {
 // Kits: curated vibes.
 // ---------------------------------------------------------------------------
 
-/// A vibe: one instrument per role plus the tone that ties them together.
+/// A vibe: pitched instruments, sampled drums, and their shared tone.
 #[derive(Clone, Copy, Debug)]
 pub struct Kit {
     pub name: &'static str,
@@ -552,13 +552,7 @@ pub struct Kit {
     pub bass: &'static Patch,
     pub lead: &'static Patch,
     pub pad: &'static Patch,
-    pub kick: &'static Patch,
-    pub snare: &'static Patch,
-    pub hat: &'static Patch,
-    /// Kick fundamental in Hz (the note the drop settles to).
-    pub kick_hz: f32,
-    /// Snare tonal-body fundamental in Hz.
-    pub snare_hz: f32,
+    pub drums: &'static DrumBank,
     pub tone: Tone,
 }
 
@@ -569,11 +563,7 @@ pub const KIT_DUSTY: Kit = Kit {
     bass: &BASS_ROUND,
     lead: &LEAD_MUSICBOX,
     pad: &PAD_WARM,
-    kick: &KICK_BOOMBAP,
-    snare: &SNARE_DUSTY,
-    hat: &HAT_CLOSED,
-    kick_hz: 50.0,
-    snare_hz: 186.0,
+    drums: &ACOUSTIC_DRUMS,
     tone: Tone {
         wow: 0.0025,
         flutter: 0.0006,
@@ -590,11 +580,7 @@ pub const KIT_RAINY: Kit = Kit {
     bass: &BASS_SUB,
     lead: &LEAD_FLUTE,
     pad: &PAD_WARM,
-    kick: &KICK_SOFT,
-    snare: &SNARE_DUSTY,
-    hat: &HAT_LOOSE,
-    kick_hz: 46.0,
-    snare_hz: 170.0,
+    drums: &ACOUSTIC_DRUMS,
     tone: Tone {
         wow: 0.004,
         flutter: 0.001,
@@ -611,11 +597,7 @@ pub const KIT_NEON: Kit = Kit {
     bass: &BASS_PLUCK,
     lead: &LEAD_GUITAR,
     pad: &PAD_GLASS,
-    kick: &KICK_BOOMBAP,
-    snare: &SNARE_RIM,
-    hat: &HAT_CLOSED,
-    kick_hz: 52.0,
-    snare_hz: 200.0,
+    drums: &ACOUSTIC_DRUMS,
     tone: Tone {
         wow: 0.0018,
         flutter: 0.0009,
@@ -632,11 +614,7 @@ pub const KIT_VELVET: Kit = Kit {
     bass: &BASS_ROUND,
     lead: &LEAD_FLUTE,
     pad: &PAD_GLASS,
-    kick: &KICK_SOFT,
-    snare: &SNARE_DUSTY,
-    hat: &HAT_CLOSED,
-    kick_hz: 48.0,
-    snare_hz: 178.0,
+    drums: &ACOUSTIC_DRUMS,
     tone: Tone {
         wow: 0.0035,
         flutter: 0.0012,

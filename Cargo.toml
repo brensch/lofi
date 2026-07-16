@@ -4,6 +4,7 @@ members = [
     "crates/lofi-app",
     "crates/lofi-sim",
     "crates/lofi-web",
+    "tools/sample-packer",
 ]
 default-members = [
     "crates/lofi-core",

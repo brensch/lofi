@@ -11,6 +11,7 @@ use crate::music::kit::{Kit, Tone};
 use crate::music::patch::{fast_decay, render_patch, soft_clip};
 use crate::music::progression::ChordSlot;
 use crate::music::progression::Progression;
+use crate::music::sample::render_sample;
 use crate::music::theory::midi_to_hz;
 use crate::transport::Transport;
 use crate::Micros;
@@ -84,7 +85,6 @@ fn drum_kick(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     let t = &ctx.transport;
     let si = t.tick_at(mesh_us).div_euclid(TICKS_PER_STEP);
     let bar = bar_at(t, mesh_us);
-    let nz = noise_index(mesh_us, ctx.sample_rate);
     let kit = ctx.kit;
 
     onsets::<4>(
@@ -100,7 +100,15 @@ fn drum_kick(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     )
     .into_iter()
     .flatten()
-    .map(|onset| render_patch(kit.kick, kit.kick_hz, onset.age, nz))
+    .map(|onset| {
+        let step = onset.step_index.rem_euclid(STEPS_PER_BAR);
+        let sample = if matches!(step, 0 | 8) {
+            kit.drums.kick_hard
+        } else {
+            kit.drums.kick_soft
+        };
+        render_sample(sample, onset.age)
+    })
     .sum::<f32>()
         * 0.95
 }
@@ -110,7 +118,6 @@ fn drum_snare(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     let t = &ctx.transport;
     let si = t.tick_at(mesh_us).div_euclid(TICKS_PER_STEP);
     let bar = bar_at(t, mesh_us);
-    let nz = noise_index(mesh_us, ctx.sample_rate);
     let kit = ctx.kit;
 
     let mut snare = onsets::<4>(
@@ -126,7 +133,7 @@ fn drum_snare(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     )
     .into_iter()
     .flatten()
-    .map(|onset| render_patch(kit.snare, kit.snare_hz, onset.age, nz))
+    .map(|onset| render_sample(kit.drums.snare_hard, onset.age))
     .sum::<f32>()
         * 0.6;
     if p.ghosts {
@@ -143,7 +150,7 @@ fn drum_snare(mesh_us: Micros, ctx: BeatCtx) -> f32 {
         )
         .into_iter()
         .flatten()
-        .map(|onset| render_patch(kit.snare, kit.snare_hz, onset.age, nz))
+        .map(|onset| render_sample(kit.drums.snare_soft, onset.age))
         .sum::<f32>()
             * 0.18;
     }
@@ -155,7 +162,6 @@ fn drum_hats(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     let t = &ctx.transport;
     let si = t.tick_at(mesh_us).div_euclid(TICKS_PER_STEP);
     let bar = bar_at(t, mesh_us);
-    let nz = noise_index(mesh_us, ctx.sample_rate);
     let kit = ctx.kit;
 
     let step_us = beat_us(t) / 4;
@@ -172,7 +178,14 @@ fn drum_hats(mesh_us: Micros, ctx: BeatCtx) -> f32 {
     })
     .into_iter()
     .flatten()
-    .map(|onset| render_patch(kit.hat, 0.0, onset.age, nz))
+    .map(|onset| {
+        let sample = if onset.step_index.rem_euclid(4) == 0 {
+            kit.drums.hat_closed
+        } else {
+            kit.drums.hat_pedal
+        };
+        render_sample(sample, onset.age)
+    })
     .sum::<f32>()
         * (if p.open_hats { 0.42 } else { 0.32 })
 }

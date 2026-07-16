@@ -58,7 +58,7 @@ Run:
 cargo run -p lofi-sim -- --nodes 8 --duration-ms 18000 --sync-start-ms 2500 --group-join-ms 8000 --wav target/lofi-two-clusters-merge.wav
 ```
 
-The reported phase spread is the sync health check. The WAV is the human check: four virtual devices start on the left and four on the right. Each side syncs internally first; then cross-cluster links open and both sides converge into one mesh. Tight sync sounds like one timing grid with procedural drums, bass, chord stabs, hats, and opposing arpeggios locked together. The simulator also schedules a future drop and seed change so the event system is exercised.
+The reported phase spread is the sync health check. The WAV is the human check: four virtual devices start on the left and four on the right. Each side syncs internally first; then cross-cluster links open and both sides converge into one mesh. Tight sync sounds like one timing grid with sampled drums, procedural bass, chord stabs, and opposing arpeggios locked together. The simulator also schedules a future drop and seed change so the event system is exercised.
 
 ## Firmware Plan
 
@@ -83,7 +83,9 @@ Audio should be I2S DMA into an external DAC. The render path should:
 
 For prototyping, `lofi-core::synth` renders into a caller-provided sample slice. Firmware can use the same shape for I2S DMA buffers.
 
-`lofi-core::groove` demonstrates the no-sample path: it generates kicks, snares, hats, bass, harmony, arps, wobble, and bitcrush from deterministic integer math. Samples are still viable later, but should be converted into static mono PCM arrays and mixed from flash or PSRAM rather than loaded dynamically.
+`lofi-core::groove` retains a no-sample reference path. The production music
+engine uses a hybrid approach: compact mu-law drum one-shots are decoded from
+flash while pitched parts remain procedural. Both paths are allocation-free.
 
 ## Hard Truths
 

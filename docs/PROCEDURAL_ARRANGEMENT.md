@@ -1,278 +1,40 @@
-# Procedural Arrangement Spec
+# Arrangement Status
 
-## Goal
+The original procedural one-shot compositor is retired. It selected independently
+harvested pitched fragments for bass, chords, and melody. Although its events
+were synchronized, the fragments did not share a performance or reliable tonal
+context, so the result sounded disconnected and failed listen QA.
 
-Make the lo-fi boxes behave like a distributed generative arranger rather than identical loop players.
+## Active Arrangement
 
-The system must:
+The shared seed now selects one `LoopScene`. All audible stems in that scene
+carry the same `source_hash` and original four-bar phase. The mesh roster deals
+five playback roles across available modules, and every module derives its loop
+position from the same transport tick.
 
-- evolve automatically over time
-- choose feature variations procedurally
-- let devices take turns deciding the next feature
-- keep every generated part compatible with every other part
-- assign clearly different musical jobs across devices
-- show each device's job and the upcoming arrangement identity on the screen
-- give each active feature combination a coined, non-descriptive codename derived from the deterministic state
+This deliberately trades infinite note-level mutation for musical coherence.
+Variation currently comes from:
 
-The core rule is:
+- three reviewed-development source scenes;
+- different module counts and physical placement;
+- deterministic tone profiles and vinyl character;
+- scheduled seed/scene changes on shared bar boundaries.
 
-```text
-audible part = f(seed, mesh roster, phrase, role, mesh time)
-```
+## Reintroducing Procedural Variation
 
-Every box computes the same arrangement locally. No note stream is sent over the mesh.
+Future variation must operate inside a source-compatible family. Acceptable
+extensions include muting stems, choosing alternate aligned takes, changing
+four-bar sections, and selecting one-shots tagged with the active scene's source,
+key, and progression. Random cross-source pitched selection is not acceptable.
 
-## Timescales
+Any extension must:
 
-### Generation
+1. remain deterministic from shared state and mesh time;
+2. remain allocation-free in `lofi-core`;
+3. preserve bounded CPU work per sample;
+4. render through `tools/listen-qa/render.mjs`;
+5. pass technical, CLAP, and Audiobox checks for every selectable scene;
+6. receive human listening approval before release.
 
-Generation is the slowest layer. It is keyed by the shared seed and produces long-lived musical material:
-
-- key center
-- chord progression template
-- base rhythmic palette
-- role catalog
-
-Generation changes only when the seed changes. That can later be scheduled as a rare event, but the initial implementation keeps the existing seed lifecycle.
-
-### Arrangement Phrase
-
-An arrangement phrase is 8 bars.
-
-At each phrase boundary, one device in the mesh roster becomes the selector. The selector is chosen by phrase index:
-
-```text
-selector = sorted_roster[phrase_index % roster_len]
-```
-
-The selector deterministically picks one feature from the catalog:
-
-```text
-feature = catalog[hash(seed, phrase_index, selector_id) % catalog_len]
-```
-
-This means all devices agree on the result, but different devices have different "taste" because the selector id changes the hash.
-
-### Active Feature Window
-
-The current arrangement is not just the newest feature. It is a sliding window of recent feature picks.
-
-Initial implementation:
-
-- phrase length: 8 bars
-- active feature window: last 4 phrases
-- newest feature: exposed as `incoming`
-- active parameters: base params plus all features in the window applied in phrase order
-
-This creates rotation: old features age out, new features enter, and the track changes without hard section switches.
-
-### Performance
-
-Performance happens per sample from mesh time and transport:
-
-- drums schedule harvested kick, snare, hat, and ghost-hit one-shots
-- bass schedules repitched harvested bass-note one-shots
-- keys voice chords from repitched harvested keys-note one-shots
-- lead schedules sparse scale-degree motifs with harvested lead-note one-shots
-- texture loops harvested room, tape, and harmonic ambience
-
-All roles use the same progression and scale source. Rhythm and pitch choices are deterministic, so devices stay synchronized even when they render different roles.
-
-## Roles
-
-Roles are structural jobs, not one-off features. Each job owns one clear part so
-the combined mix stays intelligible and the realtime renderer does not schedule
-the same sampled role repeatedly on neighboring boxes.
-
-Initial role catalog:
-
-- `PULSE`: kick
-- `POCKET`: snare, hats, and ghost hits
-- `LOW`: bass movement
-- `COLOR`: Rhodes and pad texture
-- `MOTIF`: short melodic motifs
-
-Assignment is deterministic from the sorted mesh roster:
-
-```text
-role_j belongs to device (j % roster_len)
-```
-
-Behavior:
-
-- one box plays all roles
-- two boxes split rhythm/tonal work by round-robin role ownership
-- more boxes spread roles further
-- if there are fewer boxes than roles, a box can own multiple roles
-- if there are more boxes than roles, only the first role slots are active until later expansion
-
-Each box has a primary role for display: the first role assigned to that device.
-
-## Feature Catalog
-
-Features are composable parameter deltas, not hand-authored clips. They must be safe in any combination and safe with any role subset.
-
-Initial features:
-
-- `DoubleHats`: denser hats
-- `SparseHats`: lighter hats
-- `OpenHats`: brighter hats
-- `Ghosts`: ghost snare notes
-- `KickA`: alternate kick pattern
-- `KickB`: alternate kick pattern
-- `HalfTime`: slower drum backbeat
-- `DrumFill`: rotating fill variation
-- `SwingHard`: additional swing
-- `Walk`: walking bass movement
-- `BassSkip`: alternate bass pattern
-- `SubBass`: bass octave drop
-- `BusyBass`: extra bass hits
-- `RichChords`: added chord color
-- `KeyStabs`: alternate comping pattern
-- `SparseKeys`: reduced comping
-- `LeadIn`: enable lead motifs
-- `BusyLead`: denser lead motifs
-- `NewMotif`: alternate melodic shape
-- `Dusty`: more hiss/crackle
-- `PadPulse`: alternate texture rhythm
-- `Reharm`: reseed progression choice
-
-Each feature maps mostly to one role for future UI/debug use, but the arrangement applies globally so all roles can adapt to the shared state.
-
-## Compatibility Rules
-
-Generated parts must fit regardless of layering. The implementation enforces this by constraining all features to a shared generator:
-
-- pitch material comes from the shared progression, voicing, or scale snap
-- bass and lead movement use scale-safe intervals
-- chord changes come from progression reseeding, not arbitrary note insertion
-- rhythm features alter density or onset positions inside fixed bar grids
-- sidechain is computed from the deterministic kick schedule, even on boxes that do not render drums
-- final color/saturation clamps output to a bounded range
-
-No feature may introduce a sample, chord, pitch, or free-running LFO that depends on local unsynchronized state.
-
-## Screen Contract
-
-The LCD must show:
-
-- device id
-- play/stop status
-- primary role, prominently
-- current arrangement codename
-- next arrangement codename
-- bars remaining until the next phrase
-- peer count
-- sync error
-- bar progress
-
-The screen should not show literal feature names like "DOUBLE HATS" or "WALKING BASS" in the normal performance view. It should show the coined identity of the current feature combination and the next coined identity.
-
-## Codename Rules
-
-The codename is a short pronounceable word derived from the active feature fingerprint.
-
-Requirements:
-
-- deterministic for the same seed, roster, phrase, and feature window
-- changes when the active combination changes
-- non-descriptive; it should not reveal feature names
-- ASCII-only for the firmware font path
-- fixed small maximum length for the 128x64 LCD
-
-Example shape:
-
-```text
-Consonant + vowel + consonant + vowel [+ consonant + vowel]
-```
-
-## Mesh Roster
-
-The roster is derived locally from the sync engine:
-
-- include this node
-- include fresh peers
-- sort by node id
-- dedupe
-- expose this node's index
-
-This roster drives both role assignment and feature selection turns. Because all healthy peers should converge on the same fresh peer set, every box should derive the same arrangement.
-
-If rosters temporarily differ during join/leave churn, boxes may briefly compute different role splits or codenames. That is acceptable as a transitional mesh state; audio remains local and bounded.
-
-## Audio API Changes
-
-The old full-mix renderer is replaced by per-role rendering:
-
-```rust
-render_role(role, mesh_us, BeatCtx) -> f32
-color(sum, mesh_us, sample_rate, Tone) -> f32
-```
-
-`BeatCtx` includes:
-
-- transport
-- seed
-- sample rate
-- resolved arrangement params
-- the active `Kit` (vibe): instrument timbres + tape/vinyl tone
-
-`Device::render_audio` resolves the roster, arrangement, and kit once per block,
-determines this device's assigned roles, renders only those roles per sample,
-then applies the vibe's `color` (tape saturation + vinyl air + grit) and the
-kit-tuned master lowpass.
-
-## Sound Framework
-
-The sound layer is deliberately data-driven. The offline content forge can add
-hundreds of new elements without growing the realtime control path.
-
-### Instruments are packed samples (`music::catalog`)
-
-The fixed `catalog.pack` contains mu-law drum hits, pitched one-shots, and loops.
-Its header has constant-time kind ranges plus eight nearest-root alternatives for
-every target pitch. The parser borrows directly from flash/WASM read-only memory
-and performs no allocation. Bass, keys, and lead notes are produced only by
-interpolated playback of harvested audio; symbolic notes select pitch and timing
-but never create an oscillator voice.
-
-### Vibes are deterministic signatures (`music::content`)
-
-Harvested groove signatures provide sparse step masks, timing offsets, level
-balances, and motif shapes. The shared seed chooses signatures and sample
-alternatives, so every mesh member independently reaches the same arrangement.
-`Kit` still carries bounded master tone settings while the catalogue supplies all
-audible musical material.
-
-### Tape/vinyl character (`music::character`)
-
-`warble` is a shared, deterministic playback-rate wobble and the color stage adds
-bounded saturation and filtering. Both are pure functions of mesh time, so the
-swarm colors the sampled material consistently.
-
-### Extending the catalogue
-
-1. Run `tools/content-forge/forge.py` to generate and separate a controlled theme.
-2. Let the harvester quality-gate, slice, deduplicate, tag, and rebuild the pack.
-3. Publish the resulting `catalog.pack` under `assets/content/` and rebuild WASM.
-
-The runtime catalogue API and render code remain unchanged as the pack grows.
-Catalogue tests validate the format, minimum content, deterministic lookup, and
-real variation among pitched alternatives.
-
-## Implementation Status
-
-Implemented:
-
-- `music::arrangement` roles, parameters, features, phrases, codenames, and deterministic tests
-- sorted mesh roster view and local node index
-- per-role beat rendering with lead, texture, shared sidechain, and bounded output tests
-- device audio resolution and role assignment
-- role/current/next codename display state and framebuffer tests
-
-Next work:
-
-- split the large arrangement, beat, and preset modules before extending them
-- schedule shared seed/state snapshots for late joiners
-- add call/response input and future events
-- tune patches, filters, and output gain on the physical speaker path
+See [Music Engine](MUSIC_ENGINE.md), [AI Content Pipeline](AI_CONTENT_PIPELINE.md),
+and [Listen QA](LISTEN_QA.md).

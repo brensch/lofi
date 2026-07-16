@@ -1,19 +1,18 @@
-//! Deterministic, sample-only lo-fi composition and playback.
+//! Deterministic, source-coherent sample playback.
 //!
 //! The sound library is data and can grow without changing the realtime engine:
 //!
-//! - **`theory` / `progression`** — the symbolic layer: keys, chords, voicing.
 //! - **`catalog`** — allocation-free metadata and audio borrowed from a fixed pack.
-//! - **`content`** — harvested groove signatures and sparse motif schedules.
-//! - **`sample`** — stateless mu-law playback and bounded repitching.
+//! - **`content`** — harvested tone signatures retained from reviewed references.
+//! - **`sample`** — stateless mu-law one-shot and loop playback.
 //! - **`kit`** — deterministic master tone profiles selected from the shared seed.
 //! - **`character`** — tape wow/flutter and the vinyl air bed, the shared
 //!   imperfection that makes it a record.
-//! - **`beat`** — schedules catalogue elements for each distributed role.
+//! - **`beat`** — phase-locks one coherent stem scene across distributed roles.
 //! - **`fx`** — the one stateful piece, the per-device master lowpass.
 //!
-//! Everything except that lowpass is deterministic from `(seed, roster, mesh
-//! tick)`, so boxes agree on the arrangement while rendering their assigned roles.
+//! Everything except that lowpass is deterministic from `(scene, roster, mesh
+//! tick)`, so boxes agree on playback while rendering their assigned roles.
 
 pub mod arrangement;
 pub mod beat;
@@ -31,7 +30,7 @@ mod tables;
 
 pub use arrangement::{Arrangement, Codename, Role};
 pub use beat::{color, render_role, BeatCtx};
-pub use catalog::{ElementKind, PackedCatalog, PackedElement, AI_CATALOG};
+pub use catalog::{ElementKind, LoopScene, PackedCatalog, PackedElement, AI_CATALOG};
 pub use content::{signature_for, GrooveSignature, Motif, NoteEvent};
 pub use fx::Lowpass;
 pub use kit::{Kit, Tone};

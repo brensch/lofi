@@ -58,6 +58,17 @@ pub struct PackedElement {
     pub energy: u8,
 }
 
+/// One phase-aligned set of stems harvested from the same source performance.
+#[derive(Clone, Copy, Debug)]
+pub struct LoopScene {
+    pub source_hash: u32,
+    pub drums: [Option<PackedElement>; 4],
+    pub bass: Option<PackedElement>,
+    pub melody: Option<PackedElement>,
+    pub harmony: Option<PackedElement>,
+    pub texture: Option<PackedElement>,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct PackedCatalog {
     bytes: &'static [u8],
@@ -102,6 +113,36 @@ impl PackedCatalog {
             return None;
         }
         self.element(start + selector as usize % count)
+    }
+
+    /// Select a coherent source and resolve all of its aligned loop stems.
+    /// This scans fixed metadata only when a device starts or changes seed.
+    pub fn loop_scene(&'static self, selector: u64) -> Option<LoopScene> {
+        let melodies = self.len_for_kind(ElementKind::MelodyLoop);
+        let harmonies = self.len_for_kind(ElementKind::HarmonyLoop);
+        let anchor_count = melodies + harmonies;
+        if anchor_count == 0 {
+            return None;
+        }
+        let selected = selector as usize % anchor_count;
+        let anchor = if selected < melodies {
+            self.choose(ElementKind::MelodyLoop, selected as u64)?
+        } else {
+            self.choose(ElementKind::HarmonyLoop, (selected - melodies) as u64)?
+        };
+        let source_hash = anchor.source_hash;
+        let mut drums = [None; 4];
+        for (phase, slot) in drums.iter_mut().enumerate() {
+            *slot = self.matching_loop(ElementKind::DrumLoop, source_hash, phase as u8);
+        }
+        Some(LoopScene {
+            source_hash,
+            drums,
+            bass: self.matching_loop(ElementKind::BassLoop, source_hash, 0),
+            melody: self.matching_loop(ElementKind::MelodyLoop, source_hash, 0),
+            harmony: self.matching_loop(ElementKind::HarmonyLoop, source_hash, 0),
+            texture: self.matching_loop(ElementKind::TextureLoop, source_hash, 0),
+        })
     }
 
     pub fn nearest_note(
@@ -161,6 +202,20 @@ impl PackedCatalog {
             root_semitone: (root >= 0).then_some(root as u8),
             energy: self.bytes[base + 17],
         })
+    }
+
+    fn matching_loop(
+        &'static self,
+        kind: ElementKind,
+        source_hash: u32,
+        phase: u8,
+    ) -> Option<PackedElement> {
+        let table = HEADER_SIZE + kind as usize * 4;
+        let start = self.u16(table) as usize;
+        let count = self.len_for_kind(kind);
+        (start..start + count)
+            .filter_map(|index| self.element(index))
+            .find(|element| element.source_hash == source_hash && element.phase == phase)
     }
 
     fn u16(&self, offset: usize) -> u16 {
@@ -228,6 +283,26 @@ mod tests {
     }
 
     #[test]
+    fn loop_scenes_never_mix_source_performances() {
+        for selector in 0..16 {
+            let scene = AI_CATALOG.loop_scene(selector).unwrap();
+            assert!(scene.drums.into_iter().all(|element| element.is_some()));
+            assert!(scene.bass.is_some());
+            assert!(scene.texture.is_some());
+            assert!(scene.melody.is_some() || scene.harmony.is_some());
+            let elements = scene.drums.into_iter().chain([
+                scene.bass,
+                scene.melody,
+                scene.harmony,
+                scene.texture,
+            ]);
+            assert!(elements
+                .flatten()
+                .all(|element| element.source_hash == scene.source_hash));
+        }
+    }
+
+    #[test]
     fn shipped_drum_attacks_are_aligned() {
         for kind in [ElementKind::Kick, ElementKind::Snare, ElementKind::Hat] {
             for selector in 0..AI_CATALOG.len_for_kind(kind) {
@@ -247,6 +322,33 @@ mod tests {
                 assert!(
                     onset * 800 <= sample.sample_rate() as usize,
                     "{kind:?} selector {selector} starts at frame {onset}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shipped_loop_seams_are_quiet() {
+        use crate::music::sample::render_sample;
+
+        for kind in [
+            ElementKind::DrumLoop,
+            ElementKind::BassLoop,
+            ElementKind::MelodyLoop,
+            ElementKind::HarmonyLoop,
+            ElementKind::TextureLoop,
+        ] {
+            for selector in 0..AI_CATALOG.len_for_kind(kind) {
+                let sample = AI_CATALOG.choose(kind, selector as u64).unwrap().sample;
+                let first = render_sample(&sample, 0.0).abs();
+                let last = render_sample(
+                    &sample,
+                    (sample.len() - 1) as f32 / sample.sample_rate() as f32,
+                )
+                .abs();
+                assert!(
+                    first < 0.002 && last < 0.002,
+                    "{kind:?} seam {first}/{last}"
                 );
             }
         }

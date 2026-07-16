@@ -33,10 +33,10 @@ pub struct Simulation {
 
 impl Simulation {
     pub fn new(node_count: usize, seed: u64, sync_start_us: Micros, group_join_us: Micros) -> Self {
-        // ~75 BPM, classic boom-bap lofi tempo.
+        // 80 BPM matches the phase-aligned source loops without resampling.
         let transport = Transport::new(
             SONG_ZERO_US,
-            75_000,
+            80_000,
             lofi_core::transport::DEFAULT_TICKS_PER_BEAT,
         );
         let mut rng = Lcg::new(seed);

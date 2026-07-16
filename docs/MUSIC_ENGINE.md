@@ -1,122 +1,86 @@
 # Music Engine
 
-## Goal
+## Current Contract
 
-Generate infinite evolving lo-fi grooves from deterministic state, without requiring streamed notes or a cloud model.
-
-The core idea is:
+The runtime plays coherent sampled scenes on a shared mesh timeline:
 
 ```text
-musical output = f(shared state, role, tick, local taste)
+audible output = f(scene seed, assigned role, mesh time)
 ```
 
-Shared state keeps devices coherent. Role and local parameters keep them distinct.
+A scene contains stems harvested from one source performance. The catalogue
+resolver will not combine a drum loop from one source with bass or harmony from
+another. This is the central musical invariant.
 
-## State
+## Scene Selection
 
-The minimum shared state:
+`PackedCatalog::loop_scene` selects a melody or harmony anchor from the shared
+seed, then resolves matching source hashes for:
 
-- transport: playing, BPM, song zero, ticks per beat
-- groove mode: dusty tape, jazz-hop, ambient study, drum-only, etc.
-- seed
-- section
-- density
-- swing
-- variation
-- role map
-- scheduled events
+- four one-bar drum loops with phrase phases `0..3`;
+- one four-bar bass loop;
+- an optional four-bar melody loop;
+- an optional four-bar harmony loop;
+- one four-bar texture loop.
 
-## Groove Modes
+The lookup runs only when a device starts, changes seed, or changes catalogue.
+The selected `LoopScene` is copied into the device. There is no catalogue scan
+inside the per-sample render loop.
 
-Groove modes are modular engines. In `lofi-core`, `mode::GrooveModeEngine` is the current extension point:
+## Distributed Roles
 
-- `DustyTape`: current procedural demo
-- `JazzHop`: future brushed drums, upright-ish bass, extended chords
-- `AmbientStudy`: sparse drums, pads, texture
-- `DrumOnly`: percussion-focused utility role
-- sample-backed modes: static mu-law one-shots decoded directly from flash
+The fixed role order is `Pulse`, `Pocket`, `Low`, `Color`, and `Motif`. Roles are
+dealt round-robin across the current mesh roster:
 
-## Embedded Samples
+- `Pulse`: primary drum-loop level;
+- `Pocket`: secondary drum-loop level for a separate physical speaker;
+- `Low`: bass stem;
+- `Color`: harmony plus a restrained texture stem;
+- `Motif`: melody, or a quiet harmony fallback.
 
-The sample-only engine stores mono 22.05 kHz G.711 mu-law audio in one indexed
-binary pack. Runtime playback is stateless, constant-time, allocation-free, and
-indexed from mesh note age, so a timing correction cannot desynchronize a
-sample cursor. Bass, keys, melody, drums, and texture are all sampled. Pitched
-roles change sample playback rate through linear interpolation; symbolic notes
-never invoke an oscillator voice.
+A lone module plays every role. Additional modules take distinct roles while
+remaining sample-aligned. Browser panning is listener-side monitoring only and
+does not exist in firmware.
 
-Modes must be deterministic and allocation-free in the audio path.
+## Timing
 
-## Harvested Content
+Every loop position is derived statelessly from `Transport` and mesh time. One
+bar is 384 ticks at 96 ticks per beat. Drum phase uses the current bar modulo
+four; longer stems restart on the same four-bar boundary. Playback rate follows
+transport BPM relative to the source BPM, so a tempo change cannot create an
+independent cursor on one box.
 
-AI references are reduced offline into reviewed one-shots, compatible loops,
-four-bar trigger signatures, velocity contours, role timing, spectral targets,
-and tape character. A seed chooses sampled variants deterministically. The pack
-provides eight constant-time variants per target pitch, so larger harvests add
-real timbral variety without a linear scan in the audio callback.
+The shipped scenes run at their native 80 BPM. The packer applies a one
+millisecond squared-sine fade at both loop edges, and catalogue tests require
+every shipped loop seam to be near zero.
 
-Melodies are authored against the progression's key and mode. They no longer
-select a new chord tone independently at each onset, which preserves their
-identity across harmony changes. Chords use nearest non-crossing inversions, and
-secondary key attacks are single-note answers instead of repeated full voicings.
+## Audio Path
 
-See [AI-Assisted Content Pipeline](AI_CONTENT_PIPELINE.md) for provenance,
-analysis, curation, and commercial acceptance gates.
+For each DMA/Web Audio block, `Device::render_audio`:
 
-## Infinite Evolution
+1. disciplines local hardware time to mesh time once;
+2. resolves the roster and this device's roles;
+3. reads the already selected `LoopScene`;
+4. renders only those roles from flash-resident G.711 mu-law samples;
+5. applies bounded saturation, vinyl air, and the kit low-pass;
+6. converts to signed 16-bit PCM with fixed headroom.
 
-Programmatic infinite lo-fi is plausible if generation is structured at multiple timescales:
+The core is `no_std`, allocation-free, lock-free, and contains no filesystem,
+network audio, decoder state, oscillator, or workstation ML dependency.
 
-- per step: drum hits, arp notes, ghost notes
-- per bar: fills, chord inversions, bass movement
-- per phrase: call/response, density shifts, melody motifs
-- per section: intro/groove/drop/breakdown
-- per generation: seed and progression refresh
+## Content Policy
 
-GPT-like infinite music is not needed on-device. The useful embedded approximation is a set of deterministic phrase grammars plus stochastic variation from shared seeds.
+The catalogue still includes aligned one-shots and root metadata for future
+work, but the previous runtime that assembled chords from unrelated harvested
+fragments was rejected in listening review. A new arrangement may activate
+one-shots only when it preserves source/key compatibility and passes the exact
+browser-path render gate in [Listen QA](LISTEN_QA.md).
 
-## Composition Constraints
+## Current Limitations
 
-The generator treats repetition as the foundation and variation as a limited
-resource. These constraints are intentional:
-
-- Kick, snare, hat, and bass events form one stable four-bar pocket. The full
-  pocket repeats until a feature deliberately changes its density or adds a
-  restrained turnaround.
-- Backbeats establish the meter. Syncopation comes from a few kick, bass, and
-  chord placements rather than every role competing off-grid.
-- An eight-bar phrase can carry at most two feature cards. A feature changes one
-  musical idea such as hat density, bass movement, chord color, or a lead entry.
-- The lead uses a sparse four-bar call and response with seven to twelve attacks.
-  It remains recognizable across chord changes and can change only when a motif
-  variation is selected.
-- Normal keys use two attacks per bar, normal bass uses two or three, and denser
-  modes remain capped. Extended harmony does not imply dense rhythm.
-- Timing is role-specific: the kick stays close to the grid, the snare sits later,
-  hats carry the swing, and deterministic humanization remains subtle.
-- Pads retrigger every two bars by default so chord releases and silence remain
-  audible parts of the arrangement.
-
-These rules follow groove research that finds an inverted-U response to rhythmic
-complexity: moderate syncopation tends to feel better than either a rigid grid or
-maximal complexity. Repetition supplies the prediction that makes a restrained
-violation feel like groove rather than noise.
-
-Research basis:
-
-- [Syncopation creates the sensation of groove in synthesized music](https://pmc.ncbi.nlm.nih.gov/articles/PMC4165312/)
-- [The effects of syncopation, body movement and pleasure on groove](https://pmc.ncbi.nlm.nih.gov/articles/PMC3989225/)
-- [Groove in drum patterns as a function of syncopation and event density](https://pmc.ncbi.nlm.nih.gov/articles/PMC6025871/)
-
-## Call/Response
-
-Local actions happen now on the touched device. The mesh schedules responses for other roles in the future:
-
-```text
-user triggers call at tick 1024
-device plays local phrase immediately
-mesh schedules response at tick 1024 + 4 bars
-other devices derive response material from call_id + seed + role
-```
-
-This creates the feeling of conversation without requiring low-latency network audio.
+- Only three source scenes currently have enough aligned tonal stems to play.
+- Four-bar repetition is deliberate until more reviewed source scenes exist.
+- Arrangement codenames and feature cards currently affect display state and
+  tone character, not stem selection within a scene.
+- Commercial release still requires human listening and rights approval for
+  every shipped source, regardless of automated scores.

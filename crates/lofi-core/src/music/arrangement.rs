@@ -107,11 +107,6 @@ impl Params {
             reharm: 0,
         }
     }
-
-    #[cfg(test)]
-    pub(crate) fn base_for_test(seed: u64) -> Self {
-        Self::base(seed)
-    }
 }
 
 /// One composable variation. Each is a pure, always-safe delta on `Params`.

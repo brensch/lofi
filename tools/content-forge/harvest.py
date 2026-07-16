@@ -112,13 +112,13 @@ def fade_one_shot(audio: np.ndarray, kind: str) -> np.ndarray:
 
 def smooth_loop(audio: np.ndarray) -> np.ndarray:
     result = audio.copy()
-    count = min(len(result) // 8, int(TARGET_RATE * 0.03))
+    count = min(len(result) // 8, int(TARGET_RATE * 0.001))
     if count < 2:
         return result
-    fade = np.linspace(0.0, 1.0, count, dtype=np.float32)
-    blend = result[-count:] * (1.0 - fade) + result[:count] * fade
-    result[:count] = blend
-    result[-count:] = blend
+    phase = np.linspace(0.0, np.pi / 2.0, count, dtype=np.float32)
+    fade = np.sin(phase) ** 2
+    result[:count] *= fade
+    result[-count:] *= fade[::-1]
     return result
 
 
@@ -365,7 +365,10 @@ def harvest_run(builder: PackBuilder, run: Path, source: dict[str, object]) -> N
         audio = load_mono(path)
         loop_bars = 1 if stem == "drums" else 4
         frames = bar_frames * loop_bars
-        for start in range(0, len(audio) - frames + 1, frames):
+        max_loops = 4 if stem == "drums" else 1
+        for loop_index, start in enumerate(range(0, len(audio) - frames + 1, frames)):
+            if loop_index >= max_loops:
+                break
             phase = (start // bar_frames) % 4
             builder.add(
                 audio[start : start + frames],

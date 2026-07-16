@@ -4,8 +4,8 @@
 indexes followed by 22.05 kHz mono G.711 mu-law audio. `lofi-core` parses it
 directly from flash/WASM read-only memory without allocation.
 
-The current development pack contains 233 accepted elements from four locally
-generated instrumental references: 94 drum hits, 95 pitched one-shots, and 44
+The current development pack contains 216 accepted elements from four locally
+generated instrumental references: 94 drum hits, 95 pitched one-shots, and 27
 compatible loops. It is a prototype content pack pending listening approval and
 a separate commercial-rights review.
 

@@ -29,19 +29,24 @@ discipline remain in the same `no_std` runtime intended for firmware. JavaScript
 only models the radio medium, mixes mono speaker outputs for monitoring, and
 renders controls.
 
-### Batch WAV render
+### Exact browser-path WAV render
 
 ```sh
-cargo run -p lofi-sim -- --nodes 8 --duration-ms 18000 --sync-start-ms 2500 --group-join-ms 8000 --wav target/lofi-two-clusters-merge.wav
+npm run build:web
+node tools/listen-qa/render.mjs --seed 2 --nodes 3 --duration 45 \
+  --output target/listen-qa/seed-2.wav
 ```
 
-Open `target/lofi-two-clusters-merge.wav` with headphones. Four virtual devices start on the left, four start on the right. Each side syncs internally from 2.5 seconds, then the two clusters can hear each other from 8 seconds and converge into one mesh.
+This executes the production AudioWorklet and one WASM instance per module,
+including the simulated mesh substrate and browser listener mix. See
+[Listen QA](docs/LISTEN_QA.md) for the automated and human acceptance gates.
 
-The current groove is sample-only. A fixed 8.75 MiB pack supplies 233 harvested
-drum hits, pitched one-shots, and compatible loops. Bass, harmony, and melody
-transpose those samples through stateless interpolated playback; no oscillator
-or FM voice produces musical notes. Arrangement, pitch selection, tape
-character, and mixing remain deterministic `no_std` code.
+The current groove is sample-only. A fixed 7.49 MiB pack supplies 216 harvested
+elements. The audible path selects one source-coherent scene per seed and deals
+its phase-aligned drum, bass, harmony, melody, and texture loops across modules.
+No oscillator, unrelated sample shuffle, allocator, or mutable playback cursor
+runs in the audio path. One-shots remain catalogued for future arrangements but
+are not audible until they pass the same listen-QA gate as the loop scenes.
 
 ## Hardware Direction
 
@@ -62,6 +67,7 @@ Next hardware milestones:
 - [Mesh Sync](docs/MESH_SYNC.md)
 - [Hardware Portability](docs/HARDWARE_PORTABILITY.md)
 - [Music Engine](docs/MUSIC_ENGINE.md)
+- [Listen QA](docs/LISTEN_QA.md)
 - [AI Content Pipeline](docs/AI_CONTENT_PIPELINE.md)
 - [Simulator UI](docs/SIMULATOR_UI.md)
 - [Commercialization Roadmap](docs/COMMERCIALIZATION_ROADMAP.md)

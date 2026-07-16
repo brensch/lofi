@@ -4,7 +4,7 @@ use lofi_core::mesh::{SyncEngine, SyncQuality};
 use lofi_core::music::arrangement::{Arrangement, Role, BARS_PER_PHRASE, ROLES};
 use lofi_core::music::kit::kit_for;
 use lofi_core::music::{
-    color, render_role, signature_for, BeatCtx, Lowpass, PackedCatalog, AI_CATALOG,
+    color, render_role, signature_for, BeatCtx, LoopScene, Lowpass, PackedCatalog, AI_CATALOG,
 };
 use lofi_core::transport::Transport;
 use lofi_core::{Micros, NodeId};
@@ -18,7 +18,7 @@ const TICKS_PER_BAR: i64 = 384;
 /// Master lowpass cutoff — rolls off the highs for the lofi tone.
 const LOWPASS_HZ: f32 = 3_600.0;
 /// Peak headroom when converting the f32 mix to i16.
-const OUTPUT_AMPLITUDE: f32 = 11_000.0;
+const OUTPUT_AMPLITUDE: f32 = 18_000.0;
 
 const EVENT_CAPACITY: usize = 16;
 
@@ -57,6 +57,7 @@ pub struct Device {
     voice: DeviceVoice,
     sample_rate: u32,
     catalog: &'static PackedCatalog,
+    scene: LoopScene,
     engine: SyncEngine,
     transport: Transport,
     section: Section,
@@ -74,6 +75,9 @@ impl Device {
             voice,
             sample_rate: DEFAULT_SAMPLE_RATE,
             catalog: &AI_CATALOG,
+            scene: AI_CATALOG
+                .loop_scene(seed)
+                .expect("catalog has no coherent loop scene"),
             engine: SyncEngine::new(id),
             transport,
             section: Section::Groove,
@@ -95,6 +99,9 @@ impl Device {
     pub fn with_catalog(mut self, catalog: &'static PackedCatalog) -> Self {
         assert!(catalog.is_valid(), "invalid sample catalogue");
         self.catalog = catalog;
+        self.scene = catalog
+            .loop_scene(self.seed)
+            .expect("catalog has no coherent loop scene");
         self
     }
 
@@ -190,14 +197,7 @@ impl Device {
         for (j, role) in ROLES.iter().enumerate() {
             roles[j] = role.assigned_to(roster.my_index(), roster.len());
         }
-        let ctx = BeatCtx::new(
-            self.transport,
-            self.seed,
-            self.sample_rate,
-            arrangement.params,
-            kit,
-        )
-        .with_catalog(self.catalog);
+        let ctx = BeatCtx::new(self.transport, self.scene);
 
         // The vibe's master lowpass; retune the biquad only when the vibe changes.
         let mut tone = signature.blend_tone(kit.tone);
@@ -240,7 +240,13 @@ impl Device {
             use lofi_core::event::EventAction;
             match event.action {
                 EventAction::SetSection(section) => self.section = section,
-                EventAction::SetSeed(seed) => self.seed = seed,
+                EventAction::SetSeed(seed) => {
+                    self.seed = seed;
+                    self.scene = self
+                        .catalog
+                        .loop_scene(seed)
+                        .expect("catalog has no coherent loop scene");
+                }
                 EventAction::SetTempo { bpm_milli } => {
                     self.transport = self.transport.retimed(root_us, bpm_milli)
                 }

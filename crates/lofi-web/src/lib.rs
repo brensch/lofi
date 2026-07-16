@@ -16,7 +16,7 @@ use lofi_core::transport::Transport;
 use lofi_core::{Micros, NodeId};
 
 const RENDER_FRAMES: usize = 128;
-const BPM_MILLI: u32 = 75_000;
+const BPM_MILLI: u32 = 80_000;
 const BROADCAST: u32 = 0;
 const STATUS_FIELDS: usize = 9;
 

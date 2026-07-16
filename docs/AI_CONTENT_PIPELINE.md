@@ -39,16 +39,16 @@ The reviewable preview of the embedded implementation is
 
 The firmware content currently contains:
 
-- 233 sample elements in an 8.75 MiB fixed binary pack;
+- 216 sample elements in a 7.49 MiB fixed binary pack;
 - 94 kick, snare, and hat variants;
 - 95 root-tagged bass, keys, and lead one-shots;
-- 44 drum, bass, harmony, melody, and texture loops;
-- four-bar trigger, timing, dynamics, and tone signatures;
-- six scale-degree patterns that schedule sampled melodic fragments.
+- 27 phase-aligned drum, bass, harmony, melody, and texture loops;
+- source hashes and phrase phases used to assemble coherent loop scenes;
+- tone signatures used for bounded per-device coloration.
 
-No MIDI file or synthesized note voice ships in the runtime. Scale degrees and
-chord voicings only select a target transposition; the audible result is always
-a harvested sample. Root detection remains an offline labelling tool.
+No MIDI file or synthesized note voice ships in the runtime. The current audible
+path uses only aligned loop scenes. Root-tagged one-shots remain in the catalogue
+for future source-compatible arrangements but are not currently scheduled.
 
 ## Reproducing A Report
 
@@ -71,17 +71,17 @@ Before adding a content pack:
 
 1. Confirm the render prompt, model, seed, and local source files are recorded.
 2. Reject vocals, recognizable copyrighted melodies, clipping, and broken stems.
-3. Rewrite candidate notes into tonic-relative scale degrees and simplify them.
-4. Preserve a stable four-bar identity; vary only endings, density, or register.
-5. Confirm strong melody notes agree with the selected mode and chord targets.
-6. Render every signature with multiple kits and arrangements.
-7. Run the full workspace tests and inspect discontinuities in a WAV render.
+3. Require every audible stem in a scene to share its source hash and phrase phase.
+4. Preserve a stable four-bar identity; vary only reviewed aligned takes or stems.
+5. Run shipped-pack transient and loop-seam tests.
+6. Render every selectable seed through the real browser AudioWorklet/WASM path.
+7. Require technical, CLAP, Audiobox, and human listening approval.
 8. Complete a separate commercial-rights review before shipping any audio bytes.
 
 ## Growth Model
 
-The useful unit is a content pack, not a generated song. Future packs should add
-compatible families of motifs, drum pockets, bass maps, chord templates, and
-tone signatures. The app can later install versioned packs, while firmware keeps
-the same bounded renderer. This provides new musical material without adding a
-model, allocator, filesystem, or network audio dependency to the device.
+The useful unit is a reviewed source-coherent scene, not an isolated generated
+note. Future packs should add complete aligned drum, bass, harmony, melody, and
+texture families. The app can later install versioned packs while firmware keeps
+the same bounded renderer. This adds musical material without adding a model,
+allocator, filesystem, or network audio dependency to the device.

@@ -10,6 +10,7 @@
 use crate::NodeId;
 
 /// The jobs a box can take. A lone box plays them all; a swarm spreads them out.
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Role {
     Pulse,
@@ -38,21 +39,98 @@ impl Role {
         }
     }
 
-    /// Does device `index` of `size` play this role? Roles are dealt round-robin
-    /// so role j goes to device `j % size`; a lone box gets everything.
-    pub fn assigned_to(self, index: usize, size: usize) -> bool {
-        let size = size.max(1);
-        let j = ROLES.iter().position(|r| *r == self).unwrap_or(0);
-        j % size == index % size
+    const fn bit(self) -> u8 {
+        1 << self as u8
     }
 
-    /// The headline role for a device (its lowest-index assignment).
+    /// Does device `index` of `size` play this role?
+    pub fn assigned_to(self, index: usize, size: usize) -> bool {
+        RolePlan::for_module(index, size).contains(self)
+    }
+
+    /// The headline role for a device.
     pub fn primary(index: usize, size: usize) -> Role {
-        ROLES
-            .iter()
-            .copied()
-            .find(|r| r.assigned_to(index, size))
-            .unwrap_or(Role::Pulse)
+        RolePlan::for_module(index, size).primary()
+    }
+}
+
+/// The bounded local mix assigned to one module in the current roster.
+///
+/// One box renders the complete song. Two boxes split every lane. Larger groups
+/// give every box one rhythm and one tonal lane, so an isolated box remains
+/// musical while the group still has distinct responsibilities.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RolePlan {
+    mask: u8,
+    primary: Role,
+}
+
+impl RolePlan {
+    pub fn for_module(index: usize, size: usize) -> Self {
+        let size = size.max(1);
+        let index = index % size;
+        if size == 1 {
+            return Self {
+                mask: (1 << ROLES.len()) - 1,
+                primary: Role::Pulse,
+            };
+        }
+
+        let rhythm = if index % 2 == 0 {
+            Role::Pulse
+        } else {
+            Role::Pocket
+        };
+        let tonal = match index % 3 {
+            0 => Role::Low,
+            1 => Role::Color,
+            _ => Role::Motif,
+        };
+        let mut mask = rhythm.bit() | tonal.bit();
+        if size == 2 && index == 0 {
+            mask |= Role::Motif.bit();
+        }
+
+        Self {
+            mask,
+            primary: rhythm,
+        }
+    }
+
+    pub const fn contains(self, role: Role) -> bool {
+        self.mask & role.bit() != 0
+    }
+
+    pub const fn mask(self) -> u8 {
+        self.mask
+    }
+
+    pub const fn primary(self) -> Role {
+        self.primary
+    }
+
+    /// Fixed makeup gain for this local subset. Sparse drum/tonal pairings need
+    /// more drive than kick/bass pairings to carry a room at the same volume.
+    /// The engine applies this before its bounded soft saturator.
+    pub const fn output_trim(self) -> f32 {
+        if self.contains(Role::Pulse) && self.contains(Role::Pocket) {
+            1.2
+        } else if self.contains(Role::Pulse) {
+            if self.contains(Role::Motif)
+                && !self.contains(Role::Low)
+                && !self.contains(Role::Color)
+            {
+                1.8
+            } else {
+                1.4
+            }
+        } else if self.contains(Role::Low) {
+            2.0
+        } else if self.contains(Role::Motif) {
+            7.0
+        } else {
+            5.5
+        }
     }
 }
 
@@ -140,7 +218,7 @@ pub enum Feature {
 // Only advertise variations that the sample-loop renderer currently makes
 // audible. Keeping dormant synthesis-era parameters out of rotation prevents
 // a phrase boundary from promising a change that cannot be heard.
-const CATALOG: [Feature; 15] = [
+const CATALOG: [Feature; 17] = [
     Feature::DoubleHats,
     Feature::SparseHats,
     Feature::OpenHats,
@@ -150,6 +228,8 @@ const CATALOG: [Feature; 15] = [
     Feature::HalfTime,
     Feature::DrumFill,
     Feature::SwingHard,
+    Feature::Walk,
+    Feature::BassSkip,
     Feature::SubBass,
     Feature::BusyBass,
     Feature::RichChords,
@@ -232,6 +312,8 @@ const WINDOW: usize = 2;
 pub struct Arrangement {
     pub params: Params,
     pub selector: NodeId,
+    /// The only lane allowed to add a foreground flourish this phrase.
+    pub spotlight: Role,
     pub incoming: Feature,
     fingerprint: u32,
 }
@@ -242,6 +324,7 @@ impl Arrangement {
         let start = (phrase - WINDOW as i64 + 1).max(0);
         let mut fingerprint = (seed as u32) ^ (params.reharm);
         let mut selector = selector_for(roster, phrase);
+        let mut spotlight = pick(seed, phrase.max(0), selector).role();
         for p in start..=phrase {
             let sel = selector_for(roster, p);
             let feature = pick(seed, p, sel);
@@ -252,6 +335,7 @@ impl Arrangement {
                 .wrapping_add(sel as u32);
             if p == phrase {
                 selector = sel;
+                spotlight = feature.role();
             }
         }
         let incoming = pick(seed, phrase + 1, selector_for(roster, phrase + 1));
@@ -259,6 +343,7 @@ impl Arrangement {
         Self {
             params,
             selector,
+            spotlight,
             incoming,
             fingerprint,
         }
@@ -286,7 +371,7 @@ fn pick(seed: u64, phrase: i64, selector: NodeId) -> Feature {
     let h = splitmix(
         seed ^ (phrase as u64).wrapping_mul(0x9e37_79b9) ^ selector.wrapping_mul(0x85eb_ca6b),
     );
-    CATALOG[(h as usize) % CATALOG.len()]
+    CATALOG[(h % CATALOG.len() as u64) as usize]
 }
 
 fn splitmix(mut x: u64) -> u64 {
@@ -348,15 +433,36 @@ mod tests {
 
     #[test]
     fn roles_spread_across_devices() {
-        // Four boxes: every role covered, drums + texture on box 0.
-        for role in ROLES {
-            let covered = (0..4).any(|i| role.assigned_to(i, 4));
-            assert!(covered, "{:?} uncovered with 4 boxes", role);
+        assert_eq!(RolePlan::for_module(0, 1).mask().count_ones(), 5);
+
+        for size in 2..=10 {
+            let mut covered = 0;
+            for index in 0..size {
+                let plan = RolePlan::for_module(index, size);
+                let count = plan.mask().count_ones();
+                assert!(
+                    (2..=3).contains(&count),
+                    "{size} boxes, module {index}: {count} roles"
+                );
+                assert!(plan.contains(Role::Pulse) || plan.contains(Role::Pocket));
+                assert!(
+                    plan.contains(Role::Low)
+                        || plan.contains(Role::Color)
+                        || plan.contains(Role::Motif)
+                );
+                assert_ne!(count, ROLES.len() as u32);
+                assert!((1.0..=7.0).contains(&plan.output_trim()));
+                covered |= plan.mask();
+            }
+            assert_eq!(
+                covered.count_ones(),
+                5,
+                "{size} boxes did not cover every role"
+            );
         }
-        // A lone box plays everything.
-        for role in ROLES {
-            assert!(role.assigned_to(0, 1));
-        }
+
+        assert_eq!(RolePlan::for_module(0, 2).mask().count_ones(), 3);
+        assert_eq!(RolePlan::for_module(1, 2).mask().count_ones(), 2);
     }
 
     #[test]
@@ -365,9 +471,60 @@ mod tests {
         let a = Arrangement::at(99, &roster, 4);
         let b = Arrangement::at(99, &roster, 4);
         assert_eq!(a.params, b.params);
+        assert_eq!(a.spotlight, b.spotlight);
         // A later phrase generally differs.
         let c = Arrangement::at(99, &roster, 9);
         assert_ne!(a.codename(), c.codename());
+    }
+
+    #[test]
+    fn exactly_one_lane_owns_each_phrase_spotlight() {
+        let roster = [1u64, 2, 3];
+        for seed in 0..64 {
+            for phrase in 0..64 {
+                let arrangement = Arrangement::at(seed, &roster, phrase);
+                let selector = selector_for(&roster, phrase);
+                assert_eq!(arrangement.spotlight, pick(seed, phrase, selector).role());
+            }
+        }
+    }
+
+    #[test]
+    fn selector_vectors_are_architecture_width_independent() {
+        let roster = [1u64, 2, 3];
+        let walk = Arrangement::at(0, &roster, 4);
+        assert_eq!(walk.selector, 2);
+        assert_eq!(walk.spotlight, Role::Low);
+        assert!(walk.params.bass_walk);
+
+        let sparse = Arrangement::at(2, &roster, 18);
+        assert_eq!(sparse.spotlight, Role::Pocket);
+        assert_eq!(sparse.params.hat_density, 0);
+    }
+
+    #[test]
+    fn listening_profiles_resolve_to_their_named_spotlights() {
+        let roster = [1u64, 2, 3];
+        for (seed, phrase) in [(0, 10), (1, 12), (2, 21)] {
+            let value = Arrangement::at(seed, &roster, phrase);
+            assert_eq!(value.spotlight, Role::Pulse);
+            assert!(value.params.half_time);
+        }
+        for (seed, phrase) in [(3, 8), (4, 58), (5, 6)] {
+            let value = Arrangement::at(seed, &roster, phrase);
+            assert_eq!(value.spotlight, Role::Pocket);
+            assert_eq!(value.params.hat_density, 2);
+        }
+        for (seed, phrase) in [(6, 13), (7, 24), (8, 13)] {
+            let value = Arrangement::at(seed, &roster, phrase);
+            assert_eq!(value.spotlight, Role::Low);
+            assert!(value.params.bass_walk);
+        }
+        for (seed, phrase) in [(12, 17), (10, 14), (11, 14)] {
+            let value = Arrangement::at(seed, &roster, phrase);
+            assert_eq!(value.spotlight, Role::Pocket);
+            assert_eq!(value.params.hat_density, 0);
+        }
     }
 
     #[test]

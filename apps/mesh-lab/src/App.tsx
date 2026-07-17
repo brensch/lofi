@@ -6,11 +6,16 @@ import { ModuleGrid } from "./components/ModuleGrid";
 import { Waveform } from "./components/Waveform";
 import { useMeshAudio } from "./hooks/useMeshAudio";
 import { MAX_NODES } from "./types/mesh";
+import { JudgementPage } from "./pages/JudgementPage";
 
 const SESSION_SEED = 2;
 const INITIAL_VOLUME = 0.7;
 
 export function App() {
+  return window.location.pathname === "/judge" ? <JudgementPage /> : <MeshLabPage />;
+}
+
+function MeshLabPage() {
   const [volume, setVolume] = useState(INITIAL_VOLUME);
   const mesh = useMeshAudio(SESSION_SEED, INITIAL_VOLUME);
   const running = mesh.runtime === "running";
@@ -34,6 +39,7 @@ export function App() {
       <main className="workspace">
         <ControlPanel
           beatsToChangeMilli={leader?.beatsToChangeMilli}
+          spotlight={leader?.spotlight}
           upcomingChange={leader?.upcomingChange}
           instanceCount={mesh.telemetry.nodes.length}
           network={mesh.telemetry.network}

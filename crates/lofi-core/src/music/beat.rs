@@ -11,6 +11,7 @@ use crate::music::character::vinyl;
 use crate::music::dsp::soft_clip;
 use crate::music::kit::Tone;
 use crate::music::sample::{render_sample, render_sample_looped};
+use crate::music::theory::midi_to_hz;
 use crate::transport::Transport;
 use crate::Micros;
 
@@ -24,6 +25,7 @@ const HIT_LOOKBACK_STEPS: i64 = 4;
 pub struct BeatCtx {
     pub transport: Transport,
     pub scene: LoopScene,
+    bass_flourish: Option<PackedElement>,
     evolution: Option<BeatEvolution>,
 }
 
@@ -32,6 +34,7 @@ pub struct BeatEvolution {
     pub previous: Params,
     pub current: Params,
     pub phrase: i64,
+    pub spotlight: Role,
 }
 
 impl BeatCtx {
@@ -39,12 +42,18 @@ impl BeatCtx {
         Self {
             transport,
             scene,
+            bass_flourish: None,
             evolution: None,
         }
     }
 
     pub const fn with_evolution(mut self, evolution: BeatEvolution) -> Self {
         self.evolution = Some(evolution);
+        self
+    }
+
+    pub const fn with_bass_flourish(mut self, element: Option<PackedElement>) -> Self {
+        self.bass_flourish = element;
         self
     }
 }
@@ -58,8 +67,8 @@ pub fn render_role(role: Role, mesh_us: Micros, ctx: BeatCtx) -> f32 {
                 * role_level(Role::Pocket, mesh_us, ctx)
         }
         Role::Low => {
-            loop_element(ctx.scene.bass, mesh_us, ctx.transport)
-                * role_level(Role::Low, mesh_us, ctx)
+            let bed = loop_element(ctx.scene.bass, mesh_us, ctx.transport);
+            bed * role_level(Role::Low, mesh_us, ctx) + bass_flourish(mesh_us, ctx) * 0.49
         }
         Role::Color => {
             let harmonic = loop_element(ctx.scene.harmony, mesh_us, ctx.transport);
@@ -78,6 +87,89 @@ pub fn render_role(role: Role, mesh_us: Micros, ctx: BeatCtx) -> f32 {
                 * role_level(Role::Motif, mesh_us, ctx)
                 * fallback
         }
+    }
+}
+
+fn bass_flourish(mesh_us: Micros, ctx: BeatCtx) -> f32 {
+    let Some(evolution) = ctx.evolution else {
+        return 0.0;
+    };
+    if evolution.spotlight != Role::Low {
+        return 0.0;
+    }
+    let Some(element) = ctx.bass_flourish else {
+        return 0.0;
+    };
+    let Some(source_note) = element.root_semitone else {
+        return 0.0;
+    };
+
+    let current_step = ctx.transport.tick_at(mesh_us).div_euclid(TICKS_PER_STEP);
+    let phrase_step = current_step.rem_euclid(STEPS_PER_BAR * BARS_PER_PHRASE);
+    let fill_start = STEPS_PER_BAR * (BARS_PER_PHRASE - 1) + 8;
+    if phrase_step < fill_start {
+        return 0.0;
+    }
+
+    let mut sum = 0.0;
+    for back in 0..7 {
+        let step = current_step - back;
+        let position = step.rem_euclid(STEPS_PER_BAR * BARS_PER_PHRASE);
+        let Some((degree, velocity)) = flourish_event(position, evolution.current) else {
+            continue;
+        };
+        let scale = if ctx.scene.mode == 0 {
+            [0, 2, 4, 7, 9]
+        } else {
+            [0, 3, 5, 7, 10]
+        };
+        let interval = scale[degree];
+        let target_class = (i32::from(ctx.scene.key_class) + interval).rem_euclid(12) as u8;
+        let target_note = 24 + target_class;
+        let rate = midi_to_hz(target_note) / midi_to_hz(source_note);
+        let start = ctx.transport.root_time_for_tick(step * TICKS_PER_STEP);
+        if mesh_us >= start {
+            let age = mesh_us.saturating_sub(start) as f32 / 1_000_000.0;
+            sum +=
+                crate::music::sample::render_sample_pitched(&element.sample, age, rate) * velocity;
+        }
+    }
+    let phrase_ticks = TICKS_PER_BAR * BARS_PER_PHRASE;
+    let next_phrase_tick = (current_step * TICKS_PER_STEP)
+        .div_euclid(phrase_ticks)
+        .saturating_add(1)
+        .saturating_mul(phrase_ticks);
+    let remaining_us = ctx
+        .transport
+        .root_time_for_tick(next_phrase_tick)
+        .saturating_sub(mesh_us);
+    let boundary_fade = (remaining_us as f32 / 120_000.0).clamp(0.0, 1.0);
+    sum * boundary_fade
+}
+
+fn flourish_event(step: i64, params: Params) -> Option<(usize, f32)> {
+    let position = step.rem_euclid(STEPS_PER_BAR);
+    if params.bass_walk {
+        return match position {
+            8 => Some((0, 0.74)),
+            10 => Some((1, 0.68)),
+            12 => Some((2, 0.72)),
+            14 => Some((3, 0.78)),
+            15 => Some((4, 0.64)),
+            _ => None,
+        };
+    }
+    let (middle, turn) = if params.bass_shape % 2 == 0 {
+        (2, 3)
+    } else {
+        (4, 1)
+    };
+    match position {
+        8 => Some((0, 0.78)),
+        11 => Some((middle, 0.70)),
+        14 => Some((turn, 0.76)),
+        15 if params.bass_busy => Some((4, 0.62)),
+        _ => None,
     }
 }
 
@@ -256,9 +348,9 @@ fn level_for(role: Role, params: Params, phrase: i64) -> f32 {
         Role::Pulse => [0.80, 0.84, 0.88, 0.80][arc],
         Role::Pocket => [0.88, 0.96, 1.0, 0.86][arc],
         Role::Low => {
-            let base = [0.54, 0.59, 0.64, 0.50][arc];
-            base + if params.bass_busy { 0.05 } else { 0.0 }
-                + if params.sub_bass { 0.03 } else { 0.0 }
+            let base = [0.76, 0.82, 0.88, 0.72][arc];
+            base + if params.bass_busy { 0.06 } else { 0.0 }
+                + if params.sub_bass { 0.04 } else { 0.0 }
         }
         Role::Color => {
             let base = [0.48, 0.55, 0.60, 0.48][arc];
@@ -308,7 +400,12 @@ fn loop_element(element: Option<PackedElement>, mesh_us: Micros, transport: Tran
 }
 
 fn noise_index(mesh_us: Micros, sample_rate: u32) -> u32 {
-    ((mesh_us.max(0) as i128 * sample_rate as i128) / 1_000_000) as u32
+    let mesh_us = mesh_us.max(0) as u64;
+    let whole_seconds = (mesh_us / 1_000_000) as u32;
+    let remaining_us = (mesh_us % 1_000_000) as u32;
+    whole_seconds
+        .wrapping_mul(sample_rate)
+        .wrapping_add(((u64::from(remaining_us) * u64::from(sample_rate)) / 1_000_000) as u32)
 }
 
 #[cfg(test)]
@@ -367,6 +464,7 @@ mod tests {
             previous: previous.params,
             current: current.params,
             phrase: 1,
+            spotlight: current.spotlight,
         });
 
         let boundary_us = 24_000_000;
@@ -378,5 +476,42 @@ mod tests {
             role_level(Role::Pulse, boundary_us + 750_000, ctx),
             level_for(Role::Pulse, current.params, 1)
         );
+    }
+
+    #[test]
+    fn bass_spotlight_uses_pitched_samples_for_a_real_fill() {
+        let seed = 6;
+        let phrase = 13;
+        let roster = [1, 2, 3];
+        let arrangement = crate::music::Arrangement::at(seed, &roster, phrase);
+        let previous = crate::music::Arrangement::at(seed, &roster, phrase - 1);
+        assert_eq!(arrangement.spotlight, Role::Low);
+        assert!(arrangement.params.bass_walk);
+
+        let transport = Transport::new(0, 72_000, 96);
+        let scene = AI_CATALOG.loop_scene(seed).unwrap();
+        let evolution = BeatEvolution {
+            previous: previous.params,
+            current: arrangement.params,
+            phrase,
+            spotlight: arrangement.spotlight,
+        };
+        let bare = BeatCtx::new(transport, scene).with_evolution(evolution);
+        let note = AI_CATALOG.nearest_note(
+            crate::music::ElementKind::BassNote,
+            24 + scene.key_class,
+            seed,
+        );
+        let featured = bare.with_bass_flourish(note);
+        let phrase_start_tick = phrase * TICKS_PER_BAR * BARS_PER_PHRASE;
+        let fill_start_tick = phrase_start_tick + 7 * TICKS_PER_BAR + 8 * TICKS_PER_STEP;
+        let fill_start_us = transport.root_time_for_tick(fill_start_tick);
+        let mut difference = 0.0;
+        for offset in (0..2_500_000).step_by(500) {
+            let time = fill_start_us + offset;
+            difference +=
+                (render_role(Role::Low, time, featured) - render_role(Role::Low, time, bare)).abs();
+        }
+        assert!(difference > 1.0, "sampled bass fill was inaudible");
     }
 }

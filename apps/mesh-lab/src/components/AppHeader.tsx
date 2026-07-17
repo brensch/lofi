@@ -1,6 +1,8 @@
 import { Boxes, Pause, Play, Plus } from "lucide-react";
 
 import type { RuntimeState } from "../hooks/useMeshAudio";
+import { APP_VERSION } from "../version";
+import { AppNavigation } from "./AppNavigation";
 
 interface AppHeaderProps {
   canAdd: boolean;
@@ -23,8 +25,8 @@ export function AppHeader({ canAdd, onAdd, onToggle, runtime }: AppHeaderProps) 
     <header className="topbar">
       <div className="brand">
         <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-        <strong>LOFI MESH</strong>
-        <span>Mesh lab</span>
+        <span className="brand-name"><strong>LOFI MESH</strong><small>v{APP_VERSION}</small></span>
+        <AppNavigation active="lab" />
       </div>
 
       <div className={`transport-status ${running ? "running" : runtime === "error" ? "error" : ""}`} role="status">

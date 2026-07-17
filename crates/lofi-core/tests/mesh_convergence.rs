@@ -218,16 +218,33 @@ fn converges_under_drift_and_loss() {
 }
 
 #[test]
-fn scheduling_time_is_monotonic_across_the_swarm() {
+fn scheduling_time_is_continuous_across_the_swarm() {
     let mut h = drifting_swarm(15);
     let mut last = vec![Micros::MIN; h.nodes.len()];
+    let mut last_local = vec![Micros::MIN; h.nodes.len()];
     for _ in 0..600 {
         h.run(50_000);
-        for (node, previous) in h.nodes.iter_mut().zip(&mut last) {
+        for ((node, previous), previous_local) in h
+            .nodes
+            .iter_mut()
+            .zip(&mut last)
+            .zip(&mut last_local)
+        {
             let local = node.local(h.global_us);
             let now = node.engine.schedule_now(local);
             assert!(now >= *previous, "node {} mesh went backwards", node.id);
+            if *previous != Micros::MIN {
+                let local_advance = local - *previous_local;
+                let mesh_advance = now - *previous;
+                let tolerance = (local_advance / 100).max(2);
+                assert!(
+                    (mesh_advance - local_advance).abs() <= tolerance,
+                    "node {} scheduling jump: local +{local_advance}us, mesh +{mesh_advance}us",
+                    node.id,
+                );
+            }
             *previous = now;
+            *previous_local = local;
         }
     }
 }

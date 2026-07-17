@@ -9,12 +9,13 @@ interface ControlPanelProps {
   onNetwork: (key: NetworkControlKey, value: number | boolean) => void;
   onVolume: (value: number) => void;
   sampleRate: number;
+  spotlight?: number;
   upcomingChange?: number;
   volume: number;
 }
 
 export function ControlPanel(props: ControlPanelProps) {
-  const { beatsToChangeMilli, instanceCount, network, onNetwork, onVolume, sampleRate, upcomingChange, volume } = props;
+  const { beatsToChangeMilli, instanceCount, network, onNetwork, onVolume, sampleRate, spotlight, upcomingChange, volume } = props;
   const change = CHANGE_COPY[upcomingChange ?? 0] ?? DEFAULT_CHANGE;
   const beatsRemaining = beatsToChangeMilli === undefined
     ? undefined
@@ -30,7 +31,7 @@ export function ControlPanel(props: ControlPanelProps) {
       </div>
 
       <section className="control-section">
-        <div className="section-title"><strong><Music2 size={14} /> Music</strong></div>
+        <div className="section-title"><strong><Music2 size={14} /> Music</strong><span>{SPOTLIGHT_NAMES[spotlight ?? -1] ?? "--"} FEATURED</span></div>
         <div className="change-preview" aria-live="polite">
           <span>{change.role}</span>
           <strong>{change.headline}</strong>
@@ -98,6 +99,8 @@ const CHANGE_COPY: Record<number, ChangeCopy> = {
   7: { role: "KICK", headline: "Kick drops to half-time", detail: "The pulse clears space around each downbeat." },
   8: { role: "DRUMS", headline: "Drum fill enters", detail: "The final bar adds a synchronized snare fill." },
   9: { role: "GROOVE", headline: "Swing gets deeper", detail: "The offbeats lean further behind the grid." },
+  10: { role: "BASS", headline: "Bass walks into the turn", detail: "A sampled low-line pickup leads into the next phrase." },
+  11: { role: "BASS", headline: "Bass answers with a new shape", detail: "The final bar gets an alternate sampled bass contour." },
   12: { role: "BASS", headline: "Low end gains weight", detail: "The bass layer steps forward in the mix." },
   13: { role: "BASS", headline: "Bass gets more active", detail: "The low part takes a stronger role." },
   14: { role: "CHORDS", headline: "Chords step forward", detail: "The harmony becomes more prominent." },
@@ -105,6 +108,8 @@ const CHANGE_COPY: Record<number, ChangeCopy> = {
   18: { role: "MELODY", headline: "Motif steps forward", detail: "The melodic phrase becomes more prominent." },
   21: { role: "TEXTURE", headline: "Texture steps forward", detail: "The background layer becomes more present." },
 };
+
+const SPOTLIGHT_NAMES = ["KICK", "DRUMS", "BASS", "CHORDS", "MELODY"];
 
 function formatBeatBoundary(beats?: number) {
   if (beats === undefined) return "Waiting for transport";

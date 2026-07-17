@@ -62,6 +62,8 @@ pub struct PackedElement {
 #[derive(Clone, Copy, Debug)]
 pub struct LoopScene {
     pub source_hash: u32,
+    pub key_class: u8,
+    pub mode: u8,
     pub kick: Option<PackedElement>,
     pub snare: Option<PackedElement>,
     pub hat: Option<PackedElement>,
@@ -114,7 +116,7 @@ impl PackedCatalog {
         if count == 0 {
             return None;
         }
-        self.element(start + selector as usize % count)
+        self.element(start + (selector % count as u64) as usize)
     }
 
     /// Select a coherent source and resolve all of its aligned loop stems.
@@ -129,6 +131,8 @@ impl PackedCatalog {
         let source_hash = anchor.source_hash;
         Some(LoopScene {
             source_hash,
+            key_class: anchor.key_class,
+            mode: anchor.mode,
             kick: self.matching_element(ElementKind::Kick, source_hash, 0),
             snare: self.matching_element(ElementKind::Snare, source_hash, 0),
             hat: self.matching_element(ElementKind::Hat, source_hash, 0),
@@ -146,7 +150,7 @@ impl PackedCatalog {
         selector: u64,
     ) -> Option<PackedElement> {
         let table = kind.root_table()?;
-        let variant = selector as usize % ROOT_VARIANTS;
+        let variant = (selector % ROOT_VARIANTS as u64) as usize;
         let offset = HEADER_SIZE
             + KIND_TABLE_SIZE
             + ((table * 128 + target_semitone.min(127) as usize) * ROOT_VARIANTS + variant) * 2;

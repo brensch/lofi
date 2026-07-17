@@ -511,7 +511,7 @@ pub const SIGNATURES: &[GrooveSignature] = &[
 ];
 
 pub fn signature_for(seed: u64) -> &'static GrooveSignature {
-    &SIGNATURES[(mix64(seed ^ 0x7369_676e_6174_7572) as usize) % SIGNATURES.len()]
+    &SIGNATURES[(mix64(seed ^ 0x7369_676e_6174_7572) % SIGNATURES.len() as u64) as usize]
 }
 
 pub fn motif_for(signature: &GrooveSignature, variation: u8) -> &'static Motif {

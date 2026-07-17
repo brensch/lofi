@@ -12,8 +12,11 @@ carry the same `source_hash`; tonal stems retain their original four-bar phase.
 Kick, snare, and hats are scheduled on a fixed shared grid from aligned
 one-shots. The forge first conforms all stems from a source to one measured beat
 map and prevents each drum hit from carrying the following source transient.
-The mesh roster deals five playback roles across available modules, and every
-module derives hit and loop positions from the same transport tick.
+The mesh roster creates a bounded local role plan for every module, and every
+module derives hit and loop positions from the same transport tick. One module
+plays the complete scene, two split all five roles, and groups of three through
+ten give every module one rhythm and one tonal role while preserving global
+five-role coverage.
 
 This deliberately trades infinite note-level mutation for musical coherence.
 The session evolves automatically every eight bars. Shared arrangement
@@ -21,11 +24,14 @@ parameters vary kick and hat patterns, ghost notes, fills, bass and harmony
 weight, texture balance, and motif activity. A restrained four-phrase energy
 arc prevents each change from feeling random. Continuous stem-level changes
 crossfade over the first beat; discrete rhythm changes start on the exact phrase
-boundary.
+boundary. The newest feature card owns a single role spotlight for the phrase.
+Only that lane may add a foreground flourish; the rest of the arrangement stays
+supportive. A bass spotlight uses root-tagged sampled notes for a final-bar
+pickup while retaining the source-coherent bass loop underneath.
 
 Variation currently comes from:
 
-- two melody-backed reviewed-development source scenes;
+- three melody-backed reviewed-development source scenes in two perceptual families;
 - deterministic eight-bar arrangement changes;
 - different module counts and physical placement;
 - deterministic tone profiles and vinyl character.

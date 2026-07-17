@@ -19,11 +19,13 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:5173/> in the host browser and press **Launch mesh**.
+Open <http://localhost:5173/> in the host browser and press **Start**.
 The Vite predev hook builds the Rust WASM module and stages it for the app.
 Three WASM devices start by default. Add/remove modules, disconnect individual
 modules, change loss/latency/jitter, alter device clock drift, and monitor root
-election, role assignment, peer count, and sync quality in real time. Sequencing,
+election, multi-role assignment, peer count, and sync quality in real time. The
+lab supports ten modules; every box remains locally musical while the full group
+keeps distinct rhythm and tonal responsibilities. Sequencing,
 sample playback, arrangement, filtering, wire encoding, peer tracking, and clock
 discipline remain in the same `no_std` runtime intended for firmware. JavaScript
 only models the radio medium, mixes mono speaker outputs for monitoring, and
@@ -32,6 +34,10 @@ renders controls.
 The music evolves automatically at shared eight-bar phrase boundaries. The
 settings panel counts down to the next synchronized change; there is no
 user-facing seed or fixed tape selector.
+
+Open <http://localhost:5173/judge> for the blinded eight-bar listening study.
+Its tick/cross judgements, structured tags, and optional notes persist locally
+and on this development box for reproducible taste-model analysis.
 
 ### Exact browser-path WAV render
 

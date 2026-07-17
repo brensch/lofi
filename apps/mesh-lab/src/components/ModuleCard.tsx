@@ -12,6 +12,8 @@ interface ModuleCardProps {
 }
 
 export function ModuleCard({ canRemove, node, onRemove, onUpdate }: ModuleCardProps) {
+  const activeSounds = ROLE_NAMES.filter((_, index) => (node.roleMask & (1 << index)) !== 0);
+  const sounds = activeSounds.length === ROLE_NAMES.length ? "Full mix" : activeSounds.join(" + ");
   const panLabel = Math.abs(node.pan) < 0.04
     ? "C"
     : node.pan < 0 ? `L${Math.round(-node.pan * 100)}` : `R${Math.round(node.pan * 100)}`;
@@ -31,7 +33,7 @@ export function ModuleCard({ canRemove, node, onRemove, onUpdate }: ModuleCardPr
       </header>
 
       <div className="module-display">
-        <Metric label="SOUND" value={ROLE_NAMES[node.role] ?? "--"} title="This module's part in the music" />
+        <Metric label="SOUND" value={sounds || ROLE_NAMES[node.role] || "--"} title={activeSounds.length ? activeSounds.join(", ") : "This module's parts in the music"} />
         <Metric label="GROUP" value={`#${node.rootId}`} title="Synced modules show the same group number" />
         <Metric label="LINKS" value={String(node.peers)} title="Other modules this one can reach" />
         <Metric label="SYNC" value={timing} title="How closely this module follows the group timing" />

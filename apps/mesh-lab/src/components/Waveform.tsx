@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 
+const VISUAL_REFRESH_MS = 100;
+
 interface WaveformProps {
   analyser?: AnalyserNode;
   running: boolean;
@@ -13,11 +15,11 @@ export function Waveform({ analyser, running }: WaveformProps) {
     if (!canvas) return;
     const drawing = canvas.getContext("2d");
     if (!drawing) return;
-    const samples = analyser ? new Float32Array(analyser.fftSize) : undefined;
-    let frameId = 0;
+    const samples = analyser ? new Uint8Array(analyser.fftSize) : undefined;
+    let timerId = 0;
 
     const draw = () => {
-      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
       const width = Math.max(1, Math.floor(canvas.clientWidth * ratio));
       const height = Math.max(1, Math.floor(canvas.clientHeight * ratio));
       if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
@@ -30,21 +32,22 @@ export function Waveform({ analyser, running }: WaveformProps) {
         drawing.beginPath(); drawing.moveTo(0, y); drawing.lineTo(width, y); drawing.stroke();
       }
       if (analyser && samples && running) {
-        analyser.getFloatTimeDomainData(samples);
+        analyser.getByteTimeDomainData(samples);
         drawing.strokeStyle = "#65d99a";
         drawing.lineWidth = Math.max(1.5, ratio);
         drawing.beginPath();
-        samples.forEach((sample, index) => {
+        for (let index = 0; index < samples.length; index += 1) {
+          const sample = (samples[index] - 128) / 128;
           const x = (index / (samples.length - 1)) * width;
           const y = (0.5 - sample * 0.43) * height;
           if (index === 0) drawing.moveTo(x, y); else drawing.lineTo(x, y);
-        });
+        }
         drawing.stroke();
       }
-      frameId = requestAnimationFrame(draw);
+      if (running) timerId = window.setTimeout(draw, VISUAL_REFRESH_MS);
     };
     draw();
-    return () => cancelAnimationFrame(frameId);
+    return () => window.clearTimeout(timerId);
   }, [analyser, running]);
 
   return <div className="scope" aria-label="Mixed output waveform"><canvas ref={canvasRef} /><span className="scope-label">MIX OUT</span></div>;

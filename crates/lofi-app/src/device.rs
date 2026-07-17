@@ -1,11 +1,11 @@
 use lofi_core::event::{EventQueue, ScheduledEvent, Section};
 use lofi_core::mesh::wire::MeshMessage;
 use lofi_core::mesh::{SyncEngine, SyncQuality};
-use lofi_core::music::arrangement::{Arrangement, Role, BARS_PER_PHRASE, ROLES};
+use lofi_core::music::arrangement::{Arrangement, Role, RolePlan, BARS_PER_PHRASE, ROLES};
 use lofi_core::music::kit::kit_for;
 use lofi_core::music::{
-    color, render_role, signature_for, BeatCtx, BeatEvolution, LoopScene, Lowpass, PackedCatalog,
-    AI_CATALOG,
+    color, render_role, signature_for, BeatCtx, BeatEvolution, ElementKind, LoopScene, Lowpass,
+    PackedCatalog, AI_CATALOG,
 };
 use lofi_core::transport::Transport;
 use lofi_core::{Micros, NodeId};
@@ -18,7 +18,7 @@ pub const DEFAULT_SAMPLE_RATE: u32 = 48_000;
 const TICKS_PER_BAR: i64 = 384;
 /// Master lowpass cutoff — rolls off the highs for the lofi tone.
 const LOWPASS_HZ: f32 = 3_600.0;
-const BASS_LOWPASS_HZ: f32 = 420.0;
+const BASS_LOWPASS_HZ: f32 = 460.0;
 /// Peak headroom when converting the f32 mix to i16.
 const OUTPUT_AMPLITUDE: f32 = 18_000.0;
 
@@ -66,6 +66,8 @@ pub struct Device {
     seed: u64,
     events: EventQueue<EVENT_CAPACITY>,
     running: bool,
+    bass_flourish_phrase: i64,
+    bass_flourish: Option<lofi_core::music::PackedElement>,
     lowpass: Lowpass,
     bass_lowpass: Lowpass,
     lowpass_cutoff_hz: f32,
@@ -87,6 +89,8 @@ impl Device {
             seed,
             events: EventQueue::new(),
             running: true,
+            bass_flourish_phrase: i64::MIN,
+            bass_flourish: None,
             lowpass: Lowpass::new(LOWPASS_HZ, DEFAULT_SAMPLE_RATE, 0.707),
             bass_lowpass: Lowpass::new(BASS_LOWPASS_HZ, DEFAULT_SAMPLE_RATE, 0.707),
             lowpass_cutoff_hz: LOWPASS_HZ,
@@ -107,6 +111,8 @@ impl Device {
         self.scene = catalog
             .loop_scene(self.seed)
             .expect("catalog has no coherent loop scene");
+        self.bass_flourish_phrase = i64::MIN;
+        self.bass_flourish = None;
         self
     }
 
@@ -200,15 +206,30 @@ impl Device {
         let previous_arrangement = Arrangement::at(self.seed, roster.ids(), phrase - 1);
         let kit = kit_for(self.seed);
         let signature = signature_for(self.seed);
-        let mut roles = [false; ROLES.len()];
-        for (j, role) in ROLES.iter().enumerate() {
-            roles[j] = role.assigned_to(roster.my_index(), roster.len());
+        let role_plan = RolePlan::for_module(roster.my_index(), roster.len());
+        let output_trim = role_plan.output_trim();
+        if self.bass_flourish_phrase != phrase {
+            let bass_target = 24 + self.scene.key_class.min(11);
+            self.bass_flourish = self.catalog.nearest_note(
+                ElementKind::BassNote,
+                bass_target,
+                self.seed ^ (phrase as u64).wrapping_mul(0x9e37_79b9),
+            );
+            self.bass_flourish_phrase = phrase;
         }
-        let ctx = BeatCtx::new(self.transport, self.scene).with_evolution(BeatEvolution {
-            previous: previous_arrangement.params,
-            current: arrangement.params,
-            phrase,
-        });
+        let bass_flourish = if arrangement.spotlight == Role::Low {
+            self.bass_flourish
+        } else {
+            None
+        };
+        let ctx = BeatCtx::new(self.transport, self.scene)
+            .with_bass_flourish(bass_flourish)
+            .with_evolution(BeatEvolution {
+                previous: previous_arrangement.params,
+                current: arrangement.params,
+                phrase,
+                spotlight: arrangement.spotlight,
+            });
 
         // The vibe's master lowpass; retune the biquad only when the vibe changes.
         let mut tone = signature.blend_tone(kit.tone);
@@ -224,17 +245,17 @@ impl Device {
             // affine clock model per sample wastes i128 math on embedded targets.
             let mesh_us = block_mesh + (ix as Micros * 1_000_000 / sr);
             let mut dry = 0.0;
-            for (j, role) in ROLES.iter().enumerate() {
-                if roles[j] {
-                    let contribution = render_role(*role, mesh_us, ctx);
-                    dry += if *role == Role::Low {
+            for role in ROLES {
+                if role_plan.contains(role) {
+                    let contribution = render_role(role, mesh_us, ctx);
+                    dry += if role == Role::Low {
                         self.bass_lowpass.process(contribution)
                     } else {
                         contribution
                     };
                 }
             }
-            let colored = color(dry, mesh_us, self.sample_rate, tone);
+            let colored = color(dry * output_trim, mesh_us, self.sample_rate, tone);
             let wet = self.lowpass.process(colored);
             *sample = (wet * OUTPUT_AMPLITUDE).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
         }
@@ -262,6 +283,8 @@ impl Device {
                         .catalog
                         .loop_scene(seed)
                         .expect("catalog has no coherent loop scene");
+                    self.bass_flourish_phrase = i64::MIN;
+                    self.bass_flourish = None;
                 }
                 EventAction::SetTempo { bpm_milli } => {
                     self.transport = self.transport.retimed(root_us, bpm_milli)
@@ -294,12 +317,17 @@ impl Device {
             .div_euclid(self.transport.ticks_per_beat.max(1) as i64)
             .clamp(0, u32::MAX as i64) as u32;
         let arrangement = Arrangement::at(self.seed, roster.ids(), phrase);
+        let role_plan = RolePlan::for_module(roster.my_index(), roster.len());
 
         DisplayState {
             node_id: self.id as u32,
             playing: self.running,
             bpm_milli: self.transport.bpm_milli,
-            role: Role::primary(roster.my_index(), roster.len()),
+            role: role_plan.primary(),
+            role_mask: role_plan.mask(),
+            spotlight: arrangement.spotlight,
+            phrase,
+            selector: arrangement.selector,
             codename: arrangement.codename(),
             next_codename: Arrangement::next_codename(self.seed, roster.ids(), phrase),
             bars_to_next: (BARS_PER_PHRASE - bar.rem_euclid(BARS_PER_PHRASE)) as u8,

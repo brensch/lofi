@@ -5,7 +5,7 @@
 The runtime plays coherent sampled scenes on a shared mesh timeline:
 
 ```text
-audible output = f(scene seed, assigned role, mesh time)
+audible output = f(scene seed, assigned role plan, mesh time)
 ```
 
 A scene contains stems harvested from one source performance. The catalogue
@@ -38,6 +38,13 @@ parameters change drum density and fills, stem prominence, texture balance, and
 motif activity inside a four-phrase energy arc. The result evolves continually
 without replacing the source-coherent scene or shuffling unrelated samples.
 
+Each phrase also has exactly one spotlight role, derived from its newest feature
+card. The spotlight is the only lane allowed a foreground flourish. `Low`
+spotlights sequence a bounded final-bar pickup from the catalogue's root-tagged
+bass one-shots; pitch is conformed to the active scene key, and the tail fades
+before the shared phrase boundary. Other lanes remain in their supporting loop
+and pattern roles, avoiding simultaneous competing fills.
+
 All modules resolve the same phrase from mesh time, so structural changes land
 on the same sample-aligned boundary. Continuous stem levels use a smoothstep
 crossfade over the first beat of the new phrase. Discrete drum-pattern changes
@@ -46,8 +53,7 @@ as a countdown rather than exposing the internal seed.
 
 ## Distributed Roles
 
-The fixed role order is `Pulse`, `Pocket`, `Low`, `Color`, and `Motif`. Roles are
-dealt round-robin across the current mesh roster:
+The fixed role order is `Pulse`, `Pocket`, `Low`, `Color`, and `Motif`:
 
 - `Pulse`: kick on beats one and three;
 - `Pocket`: backbeats plus swung eighth-note hats;
@@ -55,9 +61,16 @@ dealt round-robin across the current mesh roster:
 - `Color`: harmony plus a restrained texture stem;
 - `Motif`: melody, or a quiet harmony fallback.
 
-A lone module plays every role. Additional modules take distinct roles while
-remaining sample-aligned. Browser panning is listener-side monitoring only and
-does not exist in firmware.
+A lone module plays every role. Two modules split all five roles 3/2. From three
+modules upward, each module receives exactly one rhythm role (`Pulse` or
+`Pocket`) and one tonal role (`Low`, `Color`, or `Motif`). Every five-role layer
+remains covered, no module renders the complete mix, and no module becomes
+silent when the roster grows to ten.
+
+Each role plan has a fixed makeup trim before the bounded saturator. Sparse
+pairings receive more drive than kick/bass pairings so every physical module is
+useful as a local mono speaker. This adds no state or allocation. Browser
+panning is listener-side monitoring only and does not exist in firmware.
 
 ## Timing
 
@@ -92,15 +105,17 @@ network audio, decoder state, oscillator, or workstation ML dependency.
 
 ## Content Policy
 
-The catalogue still includes aligned one-shots and root metadata for future
-work, but the previous runtime that assembled chords from unrelated harvested
-fragments was rejected in listening review. A new arrangement may activate
-one-shots only when it preserves source/key compatibility and passes the exact
+The catalogue includes aligned one-shots and root metadata. Bass spotlights use
+one sampled voice at a time and repitch it to the active scene's major or minor
+pentatonic scale. The previous runtime that simultaneously assembled chords,
+bass, and melody from unrelated fragments remains rejected. Further one-shot
+arrangements must preserve source/key compatibility and pass the exact
 browser-path render gate in [Listen QA](LISTEN_QA.md).
 
 ## Current Limitations
 
-- Two melody-backed source scenes currently meet the automatic-selection gate.
+- Three melody-backed source scenes currently meet the automatic-selection gate,
+  although two are perceptually similar.
 - Four-bar source loops repeat inside an evolving eight-bar arrangement phrase.
 - Commercial release still requires human listening and rights approval for
   every shipped source, regardless of automated scores.

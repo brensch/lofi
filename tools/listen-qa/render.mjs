@@ -8,12 +8,14 @@ const FRAME_COUNT = 128;
 
 function parseArgs(argv) {
   const args = {
+    bpm: 80,
     duration: 45,
     nodes: 3,
     output: "target/listen-qa/browser-mix.wav",
     sampleRate: 48_000,
     seed: 2,
     solo: 0,
+    startPhrase: 0,
     wasm: "apps/mesh-lab/public/lofi_web.wasm",
     worklet: "apps/mesh-lab/src/audio/mesh-worklet.js",
   };
@@ -21,19 +23,26 @@ function parseArgs(argv) {
     const name = argv[index];
     const value = argv[index + 1];
     if (value === undefined) throw new Error(`${name} requires a value`);
-    if (name === "--duration") args.duration = Number(value);
+    if (name === "--bpm") args.bpm = Number(value);
+    else if (name === "--duration") args.duration = Number(value);
     else if (name === "--nodes") args.nodes = Number(value);
     else if (name === "--output") args.output = value;
     else if (name === "--sample-rate") args.sampleRate = Number(value);
     else if (name === "--seed") args.seed = Number(value);
     else if (name === "--solo") args.solo = Number(value);
+    else if (name === "--start-phrase") args.startPhrase = Number(value);
     else if (name === "--wasm") args.wasm = value;
     else if (name === "--worklet") args.worklet = value;
     else throw new Error(`unknown argument ${name}`);
   }
-  if (!(args.duration > 0) || !(args.sampleRate > 0)) throw new Error("invalid duration or rate");
-  if (!Number.isInteger(args.nodes) || args.nodes < 1 || args.nodes > 8) {
-    throw new Error("nodes must be an integer from 1 through 8");
+  if (!(args.bpm > 0) || !(args.duration > 0) || !(args.sampleRate > 0)) {
+    throw new Error("invalid tempo, duration, or rate");
+  }
+  if (!Number.isInteger(args.startPhrase) || args.startPhrase < 0) {
+    throw new Error("start phrase must be a non-negative integer");
+  }
+  if (!Number.isInteger(args.nodes) || args.nodes < 1 || args.nodes > 10) {
+    throw new Error("nodes must be an integer from 1 through 10");
   }
   return args;
 }
@@ -79,7 +88,13 @@ if (!Processor) throw new Error("worklet did not register a processor");
 
 const wasmBytes = fs.readFileSync(args.wasm);
 const processor = new Processor({
-  processorOptions: { initialNodes: args.nodes, seed: args.seed, wasmBytes },
+  processorOptions: {
+    bpmMilli: Math.round(args.bpm * 1_000),
+    initialNodes: args.nodes,
+    seed: args.seed,
+    startPhrase: args.startPhrase,
+    wasmBytes,
+  },
 });
 if (processor.failed) throw new Error("worklet initialization failed");
 if (args.solo) {
@@ -102,7 +117,14 @@ for (let offset = 0; offset < totalFrames; offset += FRAME_COUNT) {
 }
 
 writeWav(args.output, left, right, args.sampleRate);
+processor.handleCommand({ type: "dispose" });
+const stopped = processor.process(
+  [],
+  [[new Float32Array(FRAME_COUNT), new Float32Array(FRAME_COUNT)]],
+);
+if (stopped !== false) throw new Error("disposed AudioWorklet processor remained active");
 process.stdout.write(
-  `${args.output}: ${args.duration.toFixed(1)}s, ${args.nodes} nodes, seed ${args.seed}` +
+  `${args.output}: ${args.duration.toFixed(1)}s, ${args.nodes} nodes, seed ${args.seed}, ` +
+    `${args.bpm} BPM, phrase ${args.startPhrase}` +
     `${args.solo ? `, solo node ${args.solo}` : ""}\n`,
 );

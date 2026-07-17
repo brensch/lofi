@@ -69,13 +69,12 @@ out of both the election and discipline.
 
 - **Cold-start step**: the first reference observation snaps onto the timeline
   instead of slewing in for minutes.
-- **Monotonic scheduling output** (`schedule_now`): never decreases for
-  non-decreasing local time, even right after a backward correction — a backward
-  nudge shows up as the clock briefly *holding still*, never reversing, so a
-  scheduled beat can't be double-fired or skipped.
+- **Continuous scheduling output** (`schedule_now`): never decreases and limits
+  phase correction to 0.5% of elapsed local time. Discipline therefore changes
+  playback rate briefly instead of holding or jumping the sample cursor.
 
-On a root change (merge/heal) the clock is allowed one re-step to realign
-quickly, then it re-locks to slew-only.
+On a root change (merge/heal) the measurement model re-anchors immediately, but
+the scheduling output still approaches it through the bounded slew.
 
 ## Failure handling
 

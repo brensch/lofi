@@ -20,7 +20,7 @@ for seed in 0 1 2; do
     --seed "$seed" --nodes 5 --duration "$DURATION" \
     --output "$OUTPUT/seed-$seed.wav"
   node tools/listen-qa/render.mjs \
-    --seed "$seed" --nodes 5 --solo 3 --duration 48 \
+    --seed "$seed" --nodes 5 --solo 1 --duration 48 \
     --output "$OUTPUT/bass-$seed.wav"
   "$PYTHON" tools/listen-qa/evaluate.py "$OUTPUT/seed-$seed.wav" \
     "${MODEL_FLAGS[@]}" --output "$OUTPUT/seed-$seed.json"

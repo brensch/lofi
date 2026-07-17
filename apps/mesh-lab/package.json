@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "node scripts/build-wasm.mjs",
+    "predev": "node scripts/check-version.mjs && node scripts/build-wasm.mjs",
     "dev": "vite --host 0.0.0.0",
-    "prebuild": "node scripts/build-wasm.mjs",
+    "prebuild": "node scripts/check-version.mjs && node scripts/build-wasm.mjs",
     "build": "tsc --noEmit && vite build",
-    "check": "tsc --noEmit --pretty false && node --check src/audio/mesh-worklet.js",
+    "check": "node scripts/check-version.mjs && tsc --noEmit --pretty false && node --check src/audio/mesh-worklet.js",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
@@ -17,6 +17,7 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@types/node": "^24.10.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",

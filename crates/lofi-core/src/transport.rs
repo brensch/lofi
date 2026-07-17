@@ -1,6 +1,7 @@
 use crate::Micros;
 
 pub const DEFAULT_TICKS_PER_BEAT: u32 = 96;
+const MICROS_PER_MILLI_MINUTE: i64 = 60_000_000_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Transport {
@@ -24,16 +25,18 @@ impl Transport {
 
     pub fn tick_at(&self, root_time_us: Micros) -> i64 {
         let elapsed = root_time_us.saturating_sub(self.song_zero_us);
-        let numerator = elapsed as i128 * self.bpm_milli as i128 * self.ticks_per_beat as i128;
-        (numerator / 60_000_000_000i128) as i64
+        let ticks_per_milli_minute = i64::from(self.bpm_milli) * i64::from(self.ticks_per_beat);
+        mul_div_trunc(elapsed, ticks_per_milli_minute, MICROS_PER_MILLI_MINUTE)
     }
 
     pub fn root_time_for_tick(&self, tick: i64) -> Micros {
-        let denom = self.bpm_milli as i128 * self.ticks_per_beat as i128;
-        let numerator = tick as i128 * 60_000_000_000i128;
-        let elapsed_us = div_ceil_i128(numerator, denom);
-        self.song_zero_us
-            .saturating_add(elapsed_us.clamp(i64::MIN as i128, i64::MAX as i128) as i64)
+        let ticks_per_milli_minute = i64::from(self.bpm_milli) * i64::from(self.ticks_per_beat);
+        let elapsed_us = mul_div_ceil(
+            tick,
+            MICROS_PER_MILLI_MINUTE,
+            ticks_per_milli_minute.max(1),
+        );
+        self.song_zero_us.saturating_add(elapsed_us)
     }
 
     pub fn retimed(&self, root_time_us: Micros, new_bpm_milli: u32) -> Self {
@@ -44,7 +47,26 @@ impl Transport {
     }
 }
 
-fn div_ceil_i128(numerator: i128, denominator: i128) -> i128 {
+fn mul_div_trunc(value: i64, multiplier: i64, denominator: i64) -> i64 {
+    let quotient = value / denominator;
+    let remainder = value % denominator;
+    quotient
+        .wrapping_mul(multiplier)
+        .wrapping_add(remainder.wrapping_mul(multiplier) / denominator)
+}
+
+fn mul_div_ceil(value: i64, multiplier: i64, denominator: i64) -> i64 {
+    let quotient = value / denominator;
+    let remainder = value % denominator;
+    quotient
+        .wrapping_mul(multiplier)
+        .wrapping_add(div_ceil_i64(
+            remainder.wrapping_mul(multiplier),
+            denominator,
+        ))
+}
+
+fn div_ceil_i64(numerator: i64, denominator: i64) -> i64 {
     let quotient = numerator / denominator;
     let remainder = numerator % denominator;
     if remainder != 0 && ((numerator > 0) == (denominator > 0)) {
@@ -70,5 +92,37 @@ mod tests {
         let old = Transport::new(0, 120_000, 96);
         let changed = old.retimed(1_000_000, 90_000);
         assert_eq!(old.tick_at(1_000_000), changed.tick_at(1_000_000));
+    }
+
+    #[test]
+    fn decomposed_math_matches_wide_reference() {
+        for bpm_milli in [40_000, 72_000, 80_000, 123_456, 200_000] {
+            let transport = Transport::new(-123_456, bpm_milli, 96);
+            for elapsed in [
+                -86_400_000_000_i64,
+                -2_666,
+                0,
+                2_666,
+                86_400_000_000,
+                432_000_000_000,
+            ] {
+                let root = transport.song_zero_us + elapsed;
+                let expected = (elapsed as i128 * i128::from(bpm_milli) * 96
+                    / 60_000_000_000_i128) as i64;
+                assert_eq!(transport.tick_at(root), expected);
+            }
+            for tick in [-1_000_000_i64, -1, 0, 1, 1_000_000] {
+                let numerator = i128::from(tick) * 60_000_000_000_i128;
+                let denominator = i128::from(bpm_milli) * 96;
+                let quotient = numerator / denominator;
+                let remainder = numerator % denominator;
+                let expected = quotient
+                    + i128::from(remainder != 0 && ((numerator > 0) == (denominator > 0)));
+                assert_eq!(
+                    transport.root_time_for_tick(tick),
+                    transport.song_zero_us + expected as i64,
+                );
+            }
+        }
     }
 }

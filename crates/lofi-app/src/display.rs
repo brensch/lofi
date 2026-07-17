@@ -22,6 +22,12 @@ pub struct DisplayState {
     pub bpm_milli: u32,
     /// This box's job in the band.
     pub role: Role,
+    /// All roles rendered by this box, one bit per [`Role`] discriminant.
+    pub role_mask: u8,
+    /// The one mesh-wide role allowed a foreground flourish this phrase.
+    pub spotlight: Role,
+    pub phrase: i64,
+    pub selector: u64,
     /// Coined name of the current arrangement combination.
     pub codename: Codename,
     /// The arrangement coming next phrase.
@@ -207,6 +213,10 @@ mod tests {
             playing: true,
             bpm_milli: 90_000,
             role: Role::Pulse,
+            role_mask: 0b0_0101,
+            spotlight: Role::Low,
+            phrase: 0,
+            selector: 1,
             codename: Codename::coin(123),
             next_codename: Codename::coin(456),
             bars_to_next: 7,

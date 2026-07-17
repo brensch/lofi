@@ -5,10 +5,8 @@
 //!
 //! 1. A cold-start *step*: the first reference observation snaps the clock onto
 //!    the mesh timeline instead of slewing in slowly.
-//! 2. A *monotonic* scheduling output: [`MeshClock::schedule_now`] never goes
-//!    backwards even when discipline nudges the offset down, so a scheduled beat
-//!    can never be re-fired or skipped. A backward correction shows up as the
-//!    clock briefly holding still, never reversing.
+//! 2. A monotonic, slew-limited scheduling output: [`MeshClock::schedule_now`]
+//!    follows discipline without jumping or holding the audio playback cursor.
 
 use crate::clock::{ClockModel, DisciplineConfig, Observation};
 use crate::Micros;
@@ -16,11 +14,15 @@ use crate::Micros;
 /// Consecutive rejected observations before we conclude the clock is genuinely
 /// in the wrong place (not just a bad packet) and step onto the reference.
 const STEPOUT_REJECTS: u8 = 3;
+/// Bound scheduling-clock correction to 0.5% so discipline cannot create an
+/// audible hold or skip in sample playback.
+const MAX_SCHEDULE_SLEW_PPM: i128 = 5_000;
 
 #[derive(Clone, Copy, Debug)]
 pub struct MeshClock {
     model: ClockModel,
     last_emitted_us: Micros,
+    last_local_us: Micros,
     has_reference: bool,
     reject_streak: u8,
 }
@@ -36,6 +38,7 @@ impl MeshClock {
         Self {
             model: ClockModel::new(),
             last_emitted_us: Micros::MIN,
+            last_local_us: Micros::MIN,
             has_reference: false,
             reject_streak: 0,
         }
@@ -66,13 +69,28 @@ impl MeshClock {
     }
 
     /// Monotonic mesh time for scheduling. Never decreases for non-decreasing
-    /// `local_us`, even immediately after a backward discipline correction.
+    /// `local_us`, even immediately after a discipline correction. Corrections
+    /// are slew-limited to keep audio playback continuous.
     pub fn schedule_now(&mut self, local_us: Micros) -> Micros {
-        let mesh = self
-            .model
-            .root_from_local(local_us)
-            .max(self.last_emitted_us);
+        let target = self.model.root_from_local(local_us);
+        if self.last_emitted_us == Micros::MIN || self.last_local_us == Micros::MIN {
+            self.last_emitted_us = target;
+            self.last_local_us = local_us;
+            return target;
+        }
+
+        let local_delta = local_us.saturating_sub(self.last_local_us).max(0);
+        if local_delta == 0 {
+            return self.last_emitted_us;
+        }
+        let nominal = self.last_emitted_us.saturating_add(local_delta);
+        let phase_error = target.saturating_sub(nominal);
+        let max_correction = (((local_delta as i128) * MAX_SCHEDULE_SLEW_PPM) / 1_000_000)
+            .clamp(1, Micros::MAX as i128) as Micros;
+        let correction = phase_error.clamp(-max_correction, max_correction);
+        let mesh = nominal.saturating_add(correction).max(self.last_emitted_us);
         self.last_emitted_us = mesh;
+        self.last_local_us = local_us;
         mesh
     }
 
@@ -181,5 +199,24 @@ mod tests {
             assert!(now >= last, "mesh went backwards at step {step}");
             last = now;
         }
+    }
+
+    #[test]
+    fn schedule_now_slews_instead_of_stepping_after_discipline() {
+        let mut clock = MeshClock::new();
+        clock.observe(0, 0, cfg());
+        let block_us = 2_667;
+        let first = clock.schedule_now(0);
+        let second = clock.schedule_now(block_us);
+        assert_eq!(second - first, block_us);
+
+        let mut immediate = cfg();
+        immediate.offset_smoothing_shift = 0;
+        clock.observe(block_us, block_us + 20_000, immediate);
+        let third = clock.schedule_now(block_us * 2);
+        let advance = third - second;
+        assert!(advance > block_us * 99 / 100);
+        assert!(advance < block_us * 101 / 100);
+        assert!(clock.mesh_from_local(block_us * 2) - third > 19_000);
     }
 }

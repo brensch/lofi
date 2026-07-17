@@ -30,6 +30,11 @@ future board crate        C6, custom PCB, alternate DAC/display
 
 `lofi-core` should never depend on `esp-hal`.
 
+All deterministic selectors take their modulus in the fixed-width hash type
+before converting to `usize`. This is regression-tested because native hosts
+use 64-bit indices while WASM and ESP32 use 32-bit indices; casting first would
+make the same seed choose different arrangements on the simulator and device.
+
 ## Driver Traits
 
 The firmware app should talk to narrow traits:
@@ -51,7 +56,7 @@ The LCD only needs to show operational state at first:
 
 - playing/stopped
 - BPM
-- role
+- primary role and compact role mask
 - section
 - sync quality
 - peer count

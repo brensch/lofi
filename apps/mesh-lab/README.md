@@ -16,7 +16,12 @@ simulates device behavior.
 
 Each virtual module owns a distinct WASM instance and communicates only by
 encoded mesh frames copied through the worklet's fixed packet pool. The React
-main thread receives telemetry at 30 Hz and cannot block the audio callback.
+main thread receives telemetry at 10 Hz and cannot block the audio callback.
+
+The `/judge` route is a blinded eight-bar preference study. Votes persist
+locally first and are then appended by the Vite server to the ignored
+`target/listening-study/judgements.jsonl` dataset. See
+[`docs/LISTENING_STUDY.md`](../../docs/LISTENING_STUDY.md).
 
 ## Commands
 
@@ -31,3 +36,10 @@ npm run build:web
 
 `predev` and `prebuild` compile `lofi-web` for `wasm32-unknown-unknown` and copy
 the generated module into Vite's ignored `public/` staging directory.
+
+## Release identity
+
+Every served code deployment must bump `APP_VERSION` in `src/version.ts` and
+`WORKLET_VERSION` in `src/audio/mesh-worklet.js`. The version check runs before
+development and production builds, while the browser handshake rejects a stale
+processor. The active version is visible in both application headers.

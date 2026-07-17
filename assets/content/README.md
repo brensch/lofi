@@ -9,6 +9,8 @@ generated instrumental references and one original CC0 multitrack construction
 kit: 103 drum hits, 99 pitched one-shots, and 15 compatible loops. The forge
 conforms every source to the shared tempo/downbeat grid, ends drum hits before
 the next detected transient, and normalizes bass-loop RMS before mu-law encoding.
+The runtime uses the root-tagged bass one-shots only during a bass spotlight,
+forming one bounded final-bar pickup rather than stacking unrelated tonal lanes.
 
 The CC0 source and its transformations are recorded in
 `catalog.sources.json`. The locally generated references remain a prototype

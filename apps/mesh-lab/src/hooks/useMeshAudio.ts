@@ -8,11 +8,16 @@ import type {
   WorkletCommand,
   WorkletMessage,
 } from "../types/mesh";
+import { APP_VERSION, versionedAssetUrl } from "../version";
 
 export type RuntimeState = "error" | "offline" | "paused" | "running" | "starting";
 
+const WORKLET_URL = versionedAssetUrl(workletUrl);
+const WASM_URL = versionedAssetUrl("/lofi_web.wasm");
+
 const EMPTY_TELEMETRY: MeshTelemetry = {
   type: "telemetry",
+  version: APP_VERSION,
   sampleRate: 0,
   nodes: [],
   network: {
@@ -47,6 +52,15 @@ export function useMeshAudio(initialSeed: number, initialVolume: number) {
       setRuntime("error");
       return;
     }
+    if (message.type === "diagnostics") return;
+    if (message.version !== APP_VERSION) {
+      const nextError = new Error(`Audio version mismatch: page ${APP_VERSION}, processor ${message.version}`);
+      readyRef.current?.reject(nextError);
+      readyRef.current = null;
+      setError(nextError.message);
+      setRuntime("error");
+      return;
+    }
     setTelemetry(message);
     if (message.type === "ready") {
       readyRef.current?.resolve();
@@ -66,8 +80,8 @@ export function useMeshAudio(initialSeed: number, initialVolume: number) {
       };
     });
     const [wasmResponse] = await Promise.all([
-      fetch("/lofi_web.wasm"),
-      context.audioWorklet.addModule(workletUrl),
+      fetch(WASM_URL, { cache: "no-store" }),
+      context.audioWorklet.addModule(WORKLET_URL),
     ]);
     if (!wasmResponse.ok) throw new Error(`WASM request failed: ${wasmResponse.status}`);
 
@@ -83,7 +97,7 @@ export function useMeshAudio(initialSeed: number, initialVolume: number) {
     });
     const gain = new GainNode(context, { gain: initialVolume });
     const nextAnalyser = new AnalyserNode(context, {
-      fftSize: 2048,
+      fftSize: 512,
       smoothingTimeConstant: 0.72,
     });
     worklet.connect(gain).connect(nextAnalyser).connect(context.destination);
@@ -112,7 +126,7 @@ export function useMeshAudio(initialSeed: number, initialVolume: number) {
         setRuntime("running");
       }
     } catch (cause) {
-      workletRef.current?.disconnect();
+      disposeWorklet(workletRef.current);
       await contextRef.current?.close();
       workletRef.current = null;
       gainRef.current = null;
@@ -149,7 +163,7 @@ export function useMeshAudio(initialSeed: number, initialVolume: number) {
 
   useEffect(
     () => () => {
-      workletRef.current?.disconnect();
+      disposeWorklet(workletRef.current);
       void contextRef.current?.close();
     },
     [],
@@ -167,4 +181,11 @@ export function useMeshAudio(initialSeed: number, initialVolume: number) {
     updateNetwork,
     updateNode,
   };
+}
+
+function disposeWorklet(worklet: AudioWorkletNode | null) {
+  if (!worklet) return;
+  worklet.port.postMessage({ type: "dispose" });
+  worklet.port.onmessage = null;
+  worklet.disconnect();
 }

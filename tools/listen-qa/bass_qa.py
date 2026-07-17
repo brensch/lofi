@@ -51,7 +51,10 @@ def main() -> None:
     }
     report["checks"] = {
         "consistent_level": report["metrics"]["rms_spread_db"] <= 1.5,
-        "soft_upper_band": report["metrics"]["max_upper_band_energy"] <= 0.001,
+        # A rendered module also carries its assigned rhythm lane. Keep the
+        # combined Pulse/Low or Pocket/Low output extremely dark without
+        # pretending this is a stem-only measurement.
+        "soft_upper_band": report["metrics"]["max_upper_band_energy"] <= 0.0015,
         "headroom": all(float(render["peak_dbfs"]) <= -10.0 for render in renders),
         "present": all(float(render["rms_dbfs"]) >= -36.0 for render in renders),
     }

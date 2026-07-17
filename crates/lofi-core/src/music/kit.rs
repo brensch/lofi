@@ -71,7 +71,7 @@ pub const KITS: &[&Kit] = &[&KIT_DUSTY, &KIT_RAINY, &KIT_NEON, &KIT_VELVET];
 /// Pick a profile from shared state so every mesh member makes the same choice.
 pub fn kit_for(seed: u64) -> &'static Kit {
     let hash = super::arrangement::mix64(seed ^ 0x7669_6265_6b69_7401);
-    KITS[(hash as usize) % KITS.len()]
+    KITS[(hash % KITS.len() as u64) as usize]
 }
 
 #[cfg(test)]

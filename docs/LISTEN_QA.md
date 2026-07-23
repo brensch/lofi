@@ -14,6 +14,17 @@ instruments that measure craft directly — property gates over the exact
 symbolic score, and audio features compared against approved references. See
 [Symbolic engine QA](#symbolic-engine-qa) below.
 
+**Symbolic engine status (2026-07-23 overnight sweep): 48 seeds, 13 pass
+every property gate and craft window through the exact browser path. Human
+approval: pending.** The best candidate (seed 6) measures *closer to the
+approved production envelope than any loop-engine render* (corpus distance
+0.57 vs 0.62/0.80/1.16), every survivor locks the four-bar repetition
+stripe at 16 beats, and the loop engine itself fails the structure windows
+on two of its three scenes. Render cost is ~4 % of the realtime budget for
+a three-module worklet. The `/judge` deck now alternates eight gated
+symbolic candidates against the twelve loop profiles, blind. Full sweep
+detail: [docs/reports/2026-07-23-symbolic-overnight.md](reports/2026-07-23-symbolic-overnight.md).
+
 The current candidate uses source-coherent, grid-conformed stem scenes,
 transient-bounded drum hits, and deterministic eight-bar phrase evolution. On
 2026-07-16, seeds `0`, `1`, and `2` were each rendered for 96 seconds with five

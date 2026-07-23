@@ -16,15 +16,19 @@ interface CandidateProfile {
 }
 
 // Symbolic candidates that passed every property gate and craft window in
-// the overnight sweep (tools/listen-qa/candidates.py). Families follow the
-// groove signature so consecutive symbolic trials change rhythmic identity.
+// the overnight sweep (tools/listen-qa/candidates.py, 48 seeds, 13
+// survivors). The eight below span all three groove signatures, flat- and
+// sharp-side keys, and both dense and skeletal characters. Families rotate
+// so consecutive symbolic trials change rhythmic identity.
 const SYMBOLIC_PROFILES: CandidateProfile[] = [
-  { id: "s-float-0", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 0, seed: 0, startPhrase: 1, bpm: 76 },
-  { id: "s-polar-2", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 1, seed: 2, startPhrase: 1, bpm: 78 },
-  { id: "s-window-4", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 2, seed: 4, startPhrase: 2, bpm: 80 },
-  { id: "s-polar-7", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 3, seed: 7, startPhrase: 1, bpm: 74 },
-  { id: "s-float-8", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 0, seed: 8, startPhrase: 2, bpm: 78 },
-  { id: "s-window-13", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 1, seed: 13, startPhrase: 1, bpm: 82 },
+  { id: "s-window-6", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 0, seed: 6, startPhrase: 1, bpm: 78 },
+  { id: "s-polar-2", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 1, seed: 2, startPhrase: 2, bpm: 78 },
+  { id: "s-polar-17", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 2, seed: 17, startPhrase: 1, bpm: 80 },
+  { id: "s-window-13", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 3, seed: 13, startPhrase: 2, bpm: 76 },
+  { id: "s-polar-42", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 0, seed: 42, startPhrase: 5, bpm: 74 },
+  { id: "s-window-26", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 1, seed: 26, startPhrase: 1, bpm: 82 },
+  { id: "s-float-19", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 2, seed: 19, startPhrase: 2, bpm: 76 },
+  { id: "s-window-31", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 3, seed: 31, startPhrase: 6, bpm: 72 },
 ];
 
 // Loop seeds are chosen against catalog.pack so each source covers sharply

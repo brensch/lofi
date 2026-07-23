@@ -35,6 +35,7 @@ const PROBLEM_TAGS = [
 export function JudgementPage() {
   const initialRecords = useMemo(loadJudgements, []);
   const seenCandidatesRef = useRef(new Set(initialRecords.map((item) => candidateKey({
+    engine: item.record.candidate.engine ?? "loops",
     seed: item.record.candidate.seed,
     startPhrase: item.record.candidate.startPhrase ?? 0,
   }))));

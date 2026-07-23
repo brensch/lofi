@@ -166,7 +166,9 @@ pub fn keys_at(
 
     let progression_len = session.progression.len().max(1) as i64;
     let slot = slot_bar.rem_euclid(progression_len) as usize;
-    let broken = params.keys_shape % 2 == 1;
+    // A rolled chord belongs on the downbeat statement only; answers and
+    // anticipation pushes are tight rhythmic punches.
+    let broken = params.keys_shape % 2 == 1 && bar_pos == 0;
     let voices = if params.rich_chords { 3 } else { 2 };
     let base_delay = micro(session, LANE_KEYS, step, step_us);
     for (voice, entry) in out
@@ -205,12 +207,15 @@ pub fn lead_at(session: &Session, params: &Params, step: i64, step_us: i64) -> O
         return None;
     }
 
-    let transpose = match super::event_hash(session.seed, LANE_LEAD, phrase) % 4 {
-        0 => 0,
-        1 => 1,
-        2 => -1,
-        _ => 2,
+    // Phrase-scale call and answer: even phrases state near home, odd phrases
+    // answer shifted. Partitioning by parity guarantees adjacent phrases
+    // always differ even when the arrangement cards happen to repeat.
+    let options = if phrase.rem_euclid(2) == 0 {
+        [0, 2]
+    } else {
+        [1, -1]
     };
+    let transpose = options[(super::event_hash(session.seed, LANE_LEAD, phrase) % 2) as usize];
     let degree = i32::from(event.degree) + transpose;
     let bind = (degree + 2).clamp(0, super::scene::LEAD_DEGREES as i32 - 1) as u8;
     Some(Event {

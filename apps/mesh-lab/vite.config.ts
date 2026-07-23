@@ -172,6 +172,7 @@ function isJudgement(value: unknown): value is Record<string, unknown> {
     && Number.isInteger(candidate.durationMs)
     && Number(candidate.durationMs) === Math.round((8 * 4 * 60_000) / Number(candidate.bpm))
     && candidate.nodeCount === 3
+    && (candidate.engine === undefined || candidate.engine === "loops" || candidate.engine === "symbolic")
     && (candidate.profileId === undefined || (typeof candidate.profileId === "string" && candidate.profileId.length <= 40))
     && (candidate.sourceSlot === undefined || (Number.isInteger(candidate.sourceSlot) && Number(candidate.sourceSlot) >= 0 && Number(candidate.sourceSlot) <= 8))
     && (candidate.startPhrase === undefined || (Number.isInteger(candidate.startPhrase) && Number(candidate.startPhrase) >= 0 && Number(candidate.startPhrase) <= 10_000))

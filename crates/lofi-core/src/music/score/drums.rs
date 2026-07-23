@@ -133,6 +133,12 @@ pub fn hat_at(session: &Session, params: &Params, step: i64, step_us: i64) -> Op
     let cycle = step.rem_euclid(STEPS_PER_CYCLE);
     let signature = session.signature;
 
+    // A breath before every phrase boundary: the final two sixteenths rest,
+    // so the next downbeat lands into a gap instead of a wash.
+    if step.rem_euclid(STEPS_PER_PHRASE) >= STEPS_PER_PHRASE - 2 {
+        return None;
+    }
+
     let active = if params.half_time {
         bar_pos.rem_euclid(4) == 0
     } else {
@@ -147,11 +153,12 @@ pub fn hat_at(session: &Session, params: &Params, step: i64, step_us: i64) -> Op
     }
 
     let open = params.open_hats && bar_pos == 6 && !params.half_time;
-    // Off-beat sixteenths sit lower so a dense grid still breathes.
-    let dip = if bar_pos.rem_euclid(2) == 1 {
-        0.62
-    } else {
-        1.0
+    // The pocket contour: swung "and"s carry the accent, straight eighths sit
+    // behind them, off sixteenths lowest. Flat hat velocity reads robotic.
+    let dip = match bar_pos.rem_euclid(4) {
+        2 => 1.0,
+        0 => 0.78,
+        _ => 0.58,
     };
     let wobble = (super::event_hash(session.seed, 4, step) % 13) as f32 / 100.0;
     let level = if open { 1.15 } else { dip * (0.9 + wobble) } * signature.hat_gain;

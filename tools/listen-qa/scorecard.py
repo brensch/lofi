@@ -179,6 +179,10 @@ def analyze(path: str, bpm: float, out: Path) -> dict[str, object]:
         "scale_consistency": scale_consistency(chroma),
         "chroma_entropy": chroma_entropy(chroma),
         "spectral_centroid_hz": float(centroid.mean()),
+        "chroma_profile": [
+            round(float(x), 4)
+            for x in (chroma.sum(axis=1) / max(float(chroma.sum()), 1e-9))
+        ],
         **{f"band_{k}": v for k, v in band_energy(audio, rate).items()},
         **{f"structure_{k}": v for k, v in struct.items()},
         "phrases": phrase_windows(audio, rate, 24.0),

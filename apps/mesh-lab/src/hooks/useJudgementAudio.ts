@@ -202,6 +202,7 @@ export function useJudgementAudio(initialVolume: number) {
         outputChannelCount: [2],
         processorOptions: {
           bpmMilli: candidate.bpm * 1_000,
+          engine: candidate.engine,
           initialNodes: candidate.nodeCount,
           seed: candidate.seed,
           startPhrase: candidate.startPhrase,

@@ -1,10 +1,13 @@
 export type JudgementVerdict = "dislike" | "like";
 
+export type CandidateEngine = "loops" | "symbolic";
+
 export interface CandidateIdentity {
   bars: 8;
   bpm: number;
   buildRevision: string;
   durationMs: number;
+  engine: CandidateEngine;
   nodeCount: 3;
   profileId: string;
   sampleRate: number;

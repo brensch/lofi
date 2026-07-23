@@ -10,6 +10,7 @@ function parseArgs(argv) {
   const args = {
     bpm: 80,
     duration: 45,
+    engine: "symbolic",
     nodes: 3,
     output: "target/listen-qa/browser-mix.wav",
     sampleRate: 48_000,
@@ -25,6 +26,7 @@ function parseArgs(argv) {
     if (value === undefined) throw new Error(`${name} requires a value`);
     if (name === "--bpm") args.bpm = Number(value);
     else if (name === "--duration") args.duration = Number(value);
+    else if (name === "--engine") args.engine = value;
     else if (name === "--nodes") args.nodes = Number(value);
     else if (name === "--output") args.output = value;
     else if (name === "--sample-rate") args.sampleRate = Number(value);
@@ -43,6 +45,9 @@ function parseArgs(argv) {
   }
   if (!Number.isInteger(args.nodes) || args.nodes < 1 || args.nodes > 10) {
     throw new Error("nodes must be an integer from 1 through 10");
+  }
+  if (args.engine !== "symbolic" && args.engine !== "loops") {
+    throw new Error("engine must be symbolic or loops");
   }
   return args;
 }
@@ -90,6 +95,7 @@ const wasmBytes = fs.readFileSync(args.wasm);
 const processor = new Processor({
   processorOptions: {
     bpmMilli: Math.round(args.bpm * 1_000),
+    engine: args.engine,
     initialNodes: args.nodes,
     seed: args.seed,
     startPhrase: args.startPhrase,
@@ -125,6 +131,6 @@ const stopped = processor.process(
 if (stopped !== false) throw new Error("disposed AudioWorklet processor remained active");
 process.stdout.write(
   `${args.output}: ${args.duration.toFixed(1)}s, ${args.nodes} nodes, seed ${args.seed}, ` +
-    `${args.bpm} BPM, phrase ${args.startPhrase}` +
+    `${args.bpm} BPM, phrase ${args.startPhrase}, ${args.engine} engine` +
     `${args.solo ? `, solo node ${args.solo}` : ""}\n`,
 );

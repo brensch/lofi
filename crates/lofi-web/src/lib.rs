@@ -9,7 +9,7 @@
 
 use core::cell::UnsafeCell;
 
-use lofi_app::{ArpDirection, Device, DeviceVoice};
+use lofi_app::{ArpDirection, Device, DeviceVoice, Engine};
 use lofi_core::mesh::wire::{MeshMessage, MESH_WIRE_MAX};
 use lofi_core::music::arrangement::BARS_PER_PHRASE;
 use lofi_core::music::Role;
@@ -109,6 +109,20 @@ pub extern "C" fn lofi_init_at_position(
     };
 
     unsafe { *RUNTIME.0.get() = Some(runtime) };
+}
+
+/// Select the composer driving this device: 0 symbolic (default), 1 loops.
+/// The loop engine remains selectable for blinded A/B listening studies.
+#[no_mangle]
+pub extern "C" fn lofi_set_engine(engine: u32) {
+    if let Some(runtime) = runtime_mut() {
+        let engine = if engine == 1 {
+            Engine::Loops
+        } else {
+            Engine::Symbolic
+        };
+        runtime.device.set_engine(engine);
+    }
 }
 
 /// Render one Web Audio quantum at this device's local hardware time.

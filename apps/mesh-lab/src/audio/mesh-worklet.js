@@ -18,6 +18,7 @@ class LofiProcessor extends AudioWorkletProcessor {
       this.seed = config.seed;
       this.bpmMilli = config.bpmMilli ?? 80_000;
       this.startPhrase = config.startPhrase ?? 0;
+      this.engine = config.engine === "loops" ? 1 : 0;
       this.telemetryEnabled = config.telemetry !== false;
       this.disposed = false;
       this.nodes = [];
@@ -89,6 +90,9 @@ class LofiProcessor extends AudioWorkletProcessor {
       this.bpmMilli,
       this.startPhrase,
     );
+    if (this.engine !== 0 && typeof exports.lofi_set_engine === "function") {
+      exports.lofi_set_engine(this.engine);
+    }
     this.nodes.push({
       id,
       instance,

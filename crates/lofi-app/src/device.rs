@@ -143,6 +143,11 @@ impl Device {
         self
     }
 
+    /// Switch the composer in place (used by the browser ABI).
+    pub fn set_engine(&mut self, engine: Engine) {
+        self.music_engine = engine;
+    }
+
     pub const fn music_engine(&self) -> Engine {
         self.music_engine
     }

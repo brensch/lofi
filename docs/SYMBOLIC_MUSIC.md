@@ -124,6 +124,34 @@ Property gates run on the symbolic log, so failures name the bar and lane:
 7. Register separation: bass ≤ B2 < keys ≤ lead; no unison collisions on
    the same step between lead and keys top voice.
 
+## What the instruments caught on night one
+
+Each of these was invisible to a genre classifier, found by the symbolic
+diff / feature toolkit, fixed in the composer, and verified by re-measure:
+
+1. **Basslines were re-rolls, not riffs.** Non-downbeat pitches hashed the
+   absolute bar, so the bassline never repeated; the render's four-bar
+   self-similarity stripe sat at a spurious 56 beats. Hashing the position
+   inside the cycle restored riff identity (stripe snapped to 16 beats).
+2. **Keys had no mid-bar motion.** One strike per bar left beat-to-beat
+   novelty at 0.16 vs ~0.45 in the approved references; a soft answering
+   strike on the and-of-two matched it.
+3. **The pocket could go over budget.** Anticipation pushes stacked
+   broken-chord rolls on swing (~70 ms late); "SwingHard" pushed hats past
+   a third of a step. Rolls now belong to downbeats only and total swing
+   is capped at 28 % of a step.
+4. **Phrases could repeat verbatim.** When arrangement cards drew alike,
+   nothing changed across a boundary. Lead transposition now partitions by
+   phrase parity, hats breathe for two sixteenths before every boundary.
+5. **The key space was secretly narrow.** All-natural key roots made every
+   session share overlapping pitch collections; cross-seed chroma variety
+   measured *below* the three fixed loop scenes. The key table now spans
+   flats and sharps.
+6. **The kick was in the wrong key.** Every session's chroma peaked at the
+   same pitch classes regardless of progression — the kick's ~58 Hz
+   fundamental. The scene now measures it (bounded autocorrelation, once,
+   at resolve) and repitches the kick to the session tonic.
+
 ## What stays true
 
 - `no_std`, allocation-free, lock-free render path; fixed-capacity tables.

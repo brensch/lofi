@@ -226,6 +226,22 @@ The CLI retains deterministic WAV export and staged cluster merge. UI work still
 - show mesh links, packet loss, jitter, and sync quality
 - render WAVs/stems from the UI
 
+## Symbolic Engine Status
+
+The audible default is now the symbolic composer (`lofi-core::music::score`,
+see [Symbolic Music](docs/SYMBOLIC_MUSIC.md)): notes are data derived from
+`(seed, roster, mesh tick)`, voiced through the pack's root-tagged one-shots.
+Iteration runs without ears via `score_dump` + `tools/listen-qa/symbolic_gates.py`
++ `scorecard.py` + `candidates.py`; the `/judge` deck A/Bs both engines blind.
+Follow-ups queued from the first instrumented sweeps:
+
+- Measure symbolic-engine CPU on target hardware; the per-block lane lookback
+  and the one-shot kick autocorrelation at scene resolve need ESP32 numbers.
+- Widen the shipped pack's keys-note roots (only 10 elements today) so shell
+  voicings gain register freedom.
+- Reintroduce a key-matched texture bed for sparse phrases.
+- Train the taste model from engine-tagged judgement records.
+
 ## Immediate Engineering Backlog
 
 1. Add the ESP32-S3 firmware and board crates.

@@ -24,6 +24,7 @@ pub mod fx;
 pub mod kit;
 pub mod progression;
 pub mod sample;
+pub mod score;
 pub mod theory;
 
 mod tables;
@@ -35,3 +36,4 @@ pub use content::{signature_for, GrooveSignature, Motif, NoteEvent};
 pub use fx::Lowpass;
 pub use kit::{Kit, Tone};
 pub use sample::{render_sample, render_sample_looped, render_sample_pitched, Sample};
+pub use score::{ScoreCtx, Session, SymbolicScene};

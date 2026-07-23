@@ -76,7 +76,7 @@ impl RolePlan {
             };
         }
 
-        let rhythm = if index % 2 == 0 {
+        let rhythm = if index.is_multiple_of(2) {
             Role::Pulse
         } else {
             Role::Pocket

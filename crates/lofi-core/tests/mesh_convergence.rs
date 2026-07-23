@@ -224,11 +224,8 @@ fn scheduling_time_is_continuous_across_the_swarm() {
     let mut last_local = vec![Micros::MIN; h.nodes.len()];
     for _ in 0..600 {
         h.run(50_000);
-        for ((node, previous), previous_local) in h
-            .nodes
-            .iter_mut()
-            .zip(&mut last)
-            .zip(&mut last_local)
+        for ((node, previous), previous_local) in
+            h.nodes.iter_mut().zip(&mut last).zip(&mut last_local)
         {
             let local = node.local(h.global_us);
             let now = node.engine.schedule_now(local);

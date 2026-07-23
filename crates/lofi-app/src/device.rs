@@ -3,9 +3,10 @@ use lofi_core::mesh::wire::MeshMessage;
 use lofi_core::mesh::{SyncEngine, SyncQuality};
 use lofi_core::music::arrangement::{Arrangement, Role, RolePlan, BARS_PER_PHRASE, ROLES};
 use lofi_core::music::kit::kit_for;
+use lofi_core::music::score::{self, ScoreCtx};
 use lofi_core::music::{
     color, render_role, signature_for, BeatCtx, BeatEvolution, ElementKind, LoopScene, Lowpass,
-    PackedCatalog, AI_CATALOG,
+    PackedCatalog, Session, SymbolicScene, AI_CATALOG,
 };
 use lofi_core::transport::Transport;
 use lofi_core::{Micros, NodeId};
@@ -30,6 +31,17 @@ const EVENT_CAPACITY: usize = 16;
 pub enum ArpDirection {
     Up,
     Down,
+}
+
+/// Which composer drives the audible path.
+///
+/// `Symbolic` is the product default: every note exists as data before it
+/// touches a sample (see `docs/SYMBOLIC_MUSIC.md`). `Loops` phase-locks the
+/// harvested stem scenes and remains selectable for A/B listening studies.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Engine {
+    Symbolic,
+    Loops,
 }
 
 /// A device's legacy musical identity. Panning/placement is a listener concern
@@ -60,6 +72,9 @@ pub struct Device {
     sample_rate: u32,
     catalog: &'static PackedCatalog,
     scene: LoopScene,
+    music_engine: Engine,
+    session: Session,
+    symbolic_scene: SymbolicScene,
     engine: SyncEngine,
     transport: Transport,
     section: Section,
@@ -75,6 +90,7 @@ pub struct Device {
 
 impl Device {
     pub fn new(id: NodeId, voice: DeviceVoice, transport: Transport, seed: u64) -> Self {
+        let session = Session::new(seed, &AI_CATALOG);
         Self {
             id,
             voice,
@@ -83,6 +99,9 @@ impl Device {
             scene: AI_CATALOG
                 .loop_scene(seed)
                 .expect("catalog has no coherent loop scene"),
+            music_engine: Engine::Symbolic,
+            symbolic_scene: SymbolicScene::resolve(&AI_CATALOG, &session),
+            session,
             engine: SyncEngine::new(id),
             transport,
             section: Section::Groove,
@@ -111,9 +130,21 @@ impl Device {
         self.scene = catalog
             .loop_scene(self.seed)
             .expect("catalog has no coherent loop scene");
+        self.session = Session::new(self.seed, catalog);
+        self.symbolic_scene = SymbolicScene::resolve(catalog, &self.session);
         self.bass_flourish_phrase = i64::MIN;
         self.bass_flourish = None;
         self
+    }
+
+    /// Select the composer driving the audible path.
+    pub fn with_engine(mut self, engine: Engine) -> Self {
+        self.music_engine = engine;
+        self
+    }
+
+    pub const fn music_engine(&self) -> Engine {
+        self.music_engine
     }
 
     pub const fn id(&self) -> NodeId {
@@ -222,14 +253,15 @@ impl Device {
         } else {
             None
         };
+        let evolution = BeatEvolution {
+            previous: previous_arrangement.params,
+            current: arrangement.params,
+            phrase,
+            spotlight: arrangement.spotlight,
+        };
         let ctx = BeatCtx::new(self.transport, self.scene)
             .with_bass_flourish(bass_flourish)
-            .with_evolution(BeatEvolution {
-                previous: previous_arrangement.params,
-                current: arrangement.params,
-                phrase,
-                spotlight: arrangement.spotlight,
-            });
+            .with_evolution(evolution);
 
         // The vibe's master lowpass; retune the biquad only when the vibe changes.
         let mut tone = signature.blend_tone(kit.tone);
@@ -237,6 +269,14 @@ impl Device {
         // Blend the kit's baseline air with the arrangement's `dust` feature so
         // "Dusty" audibly lifts the noise bed without swamping quieter vibes.
         tone.air *= arrangement.params.dust as f32 * 0.5 + 0.4;
+
+        let score_ctx = ScoreCtx {
+            transport: self.transport,
+            session: &self.session,
+            scene: &self.symbolic_scene,
+            evolution,
+            tone,
+        };
 
         let sr = self.sample_rate as Micros;
         for (ix, sample) in out.iter_mut().enumerate() {
@@ -247,7 +287,10 @@ impl Device {
             let mut dry = 0.0;
             for role in ROLES {
                 if role_plan.contains(role) {
-                    let contribution = render_role(role, mesh_us, ctx);
+                    let contribution = match self.music_engine {
+                        Engine::Symbolic => score::render_role(role, mesh_us, &score_ctx),
+                        Engine::Loops => render_role(role, mesh_us, ctx),
+                    };
                     dry += if role == Role::Low {
                         self.bass_lowpass.process(contribution)
                     } else {
@@ -283,6 +326,8 @@ impl Device {
                         .catalog
                         .loop_scene(seed)
                         .expect("catalog has no coherent loop scene");
+                    self.session = Session::new(seed, self.catalog);
+                    self.symbolic_scene = SymbolicScene::resolve(self.catalog, &self.session);
                     self.bass_flourish_phrase = i64::MIN;
                     self.bass_flourish = None;
                 }

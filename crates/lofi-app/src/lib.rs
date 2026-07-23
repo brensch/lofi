@@ -13,5 +13,5 @@ pub mod device;
 pub mod display;
 pub mod font;
 
-pub use device::{ArpDirection, Device, DeviceVoice};
+pub use device::{ArpDirection, Device, DeviceVoice, Engine};
 pub use display::{DisplayState, Lcd};

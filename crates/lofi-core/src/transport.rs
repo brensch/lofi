@@ -31,11 +31,7 @@ impl Transport {
 
     pub fn root_time_for_tick(&self, tick: i64) -> Micros {
         let ticks_per_milli_minute = i64::from(self.bpm_milli) * i64::from(self.ticks_per_beat);
-        let elapsed_us = mul_div_ceil(
-            tick,
-            MICROS_PER_MILLI_MINUTE,
-            ticks_per_milli_minute.max(1),
-        );
+        let elapsed_us = mul_div_ceil(tick, MICROS_PER_MILLI_MINUTE, ticks_per_milli_minute.max(1));
         self.song_zero_us.saturating_add(elapsed_us)
     }
 
@@ -58,12 +54,10 @@ fn mul_div_trunc(value: i64, multiplier: i64, denominator: i64) -> i64 {
 fn mul_div_ceil(value: i64, multiplier: i64, denominator: i64) -> i64 {
     let quotient = value / denominator;
     let remainder = value % denominator;
-    quotient
-        .wrapping_mul(multiplier)
-        .wrapping_add(div_ceil_i64(
-            remainder.wrapping_mul(multiplier),
-            denominator,
-        ))
+    quotient.wrapping_mul(multiplier).wrapping_add(div_ceil_i64(
+        remainder.wrapping_mul(multiplier),
+        denominator,
+    ))
 }
 
 fn div_ceil_i64(numerator: i64, denominator: i64) -> i64 {
@@ -107,8 +101,8 @@ mod tests {
                 432_000_000_000,
             ] {
                 let root = transport.song_zero_us + elapsed;
-                let expected = (elapsed as i128 * i128::from(bpm_milli) * 96
-                    / 60_000_000_000_i128) as i64;
+                let expected =
+                    (elapsed as i128 * i128::from(bpm_milli) * 96 / 60_000_000_000_i128) as i64;
                 assert_eq!(transport.tick_at(root), expected);
             }
             for tick in [-1_000_000_i64, -1, 0, 1, 1_000_000] {
@@ -116,8 +110,8 @@ mod tests {
                 let denominator = i128::from(bpm_milli) * 96;
                 let quotient = numerator / denominator;
                 let remainder = numerator % denominator;
-                let expected = quotient
-                    + i128::from(remainder != 0 && ((numerator > 0) == (denominator > 0)));
+                let expected =
+                    quotient + i128::from(remainder != 0 && ((numerator > 0) == (denominator > 0)));
                 assert_eq!(
                     transport.root_time_for_tick(tick),
                     transport.song_zero_us + expected as i64,

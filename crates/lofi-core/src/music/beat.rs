@@ -159,7 +159,7 @@ fn flourish_event(step: i64, params: Params) -> Option<(usize, f32)> {
             _ => None,
         };
     }
-    let (middle, turn) = if params.bass_shape % 2 == 0 {
+    let (middle, turn) = if params.bass_shape.is_multiple_of(2) {
         (2, 3)
     } else {
         (4, 1)

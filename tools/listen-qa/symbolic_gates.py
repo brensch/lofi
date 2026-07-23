@@ -131,13 +131,18 @@ def check(meta: dict, events: list[dict]) -> list[str]:
                 f"{lane} level {event['level']} out of range at step {event['step']}",
             )
 
-    # 9. Micro-timing: delays bounded (pocket + swing + humanize < 60 ms).
+    # 9. Micro-timing: swing is a ratio of the step, so the pocket budget is
+    #    tempo-relative — swing plus lane delay plus humanize within ~1/3 step.
+    bpm_milli = int(meta.get("bpm_milli", 78_000))
+    step_us = 60_000_000_000 // bpm_milli // 4
+    budget = int(step_us * 0.33) + 2_000
     for lane, events_ in by_lane.items():
         for event in events_:
             gate(
                 failures,
-                -2_000 <= event["delay_us"] <= 60_000,
-                f"{lane} delay {event['delay_us']}us out of pocket at step {event['step']}",
+                -2_000 <= event["delay_us"] <= budget,
+                f"{lane} delay {event['delay_us']}us exceeds the {budget}us pocket "
+                f"at step {event['step']}",
             )
 
     return failures

@@ -29,6 +29,9 @@ pub struct Bind {
 /// Every sampled voice a session needs, resolved to fixed tables.
 #[derive(Clone, Copy, Debug)]
 pub struct SymbolicScene {
+    /// Playback ratio tuning the kick's fundamental to the session key.
+    /// An untuned kick stamps its own pitch class over every chord.
+    pub kick_rate: f32,
     pub kick_main: Option<PackedElement>,
     pub kick_accent: Option<PackedElement>,
     pub snare_main: Option<PackedElement>,
@@ -46,8 +49,12 @@ pub struct SymbolicScene {
 impl SymbolicScene {
     pub fn resolve(catalog: &'static PackedCatalog, session: &Session) -> Self {
         let seed = session.seed;
+        let kick_main = nth_by_energy(catalog, ElementKind::Kick, session.drum_source, 2, 4, seed);
         Self {
-            kick_main: nth_by_energy(catalog, ElementKind::Kick, session.drum_source, 2, 4, seed),
+            kick_rate: kick_main
+                .map(|element| kick_tuning(&element, session))
+                .unwrap_or(1.0),
+            kick_main,
             kick_accent: nth_by_energy(catalog, ElementKind::Kick, session.drum_source, 3, 4, seed),
             snare_main: nth_by_energy(catalog, ElementKind::Snare, session.drum_source, 2, 4, seed),
             snare_ghost: nth_by_energy(
@@ -263,6 +270,66 @@ fn nth_by_energy(
         }
     }
     best
+}
+
+/// Playback-rate ratio that moves the kick's measured fundamental to the
+/// session's tonic pitch class, bounded to ±3 semitones. Runs once at scene
+/// resolve: a bounded autocorrelation over the kick body, never in render.
+fn kick_tuning(element: &PackedElement, session: &Session) -> f32 {
+    use crate::music::sample::render_sample;
+    let sample = element.sample;
+    let rate = sample.sample_rate() as f32;
+    let frames = sample.len().min((rate * 0.3) as usize);
+    // Fundamental search band: 30..90 Hz, the usual kick territory.
+    let (min_lag, max_lag) = ((rate / 90.0) as usize, (rate / 30.0) as usize);
+    if frames < max_lag * 2 || min_lag == 0 {
+        return 1.0;
+    }
+    let value = |index: usize| render_sample(&sample, index as f32 / rate);
+    let mut best_lag = 0usize;
+    let mut best_score = 0.0f32;
+    let mut lag = min_lag;
+    while lag <= max_lag {
+        let mut product = 0.0f32;
+        let mut energy = 0.0f32;
+        let mut index = max_lag;
+        while index < frames {
+            let a = value(index);
+            let b = value(index - lag);
+            product += a * b;
+            energy += a * a + b * b;
+            index += 2; // decimate: pitch resolution is ample at half density
+        }
+        let score = if energy > 1e-6 {
+            2.0 * product / energy
+        } else {
+            0.0
+        };
+        if score > best_score {
+            best_score = score;
+            best_lag = lag;
+        }
+        lag += 1;
+    }
+    if best_lag == 0 || best_score < 0.3 {
+        return 1.0;
+    }
+    let measured_hz = rate / best_lag as f32;
+    // Nearest octave placement of the session tonic to the measured pitch.
+    let tonic_class = i32::from(session.progression.scale_note(0)).rem_euclid(12);
+    let mut best_ratio = 1.0f32;
+    let mut best_distance = f32::MAX;
+    for octave in 0..4 {
+        let midi = tonic_class + octave * 12 + 12;
+        let target = crate::music::theory::midi_to_hz(midi.clamp(0, 127) as u8);
+        let ratio = target / measured_hz;
+        let distance = if ratio > 1.0 { ratio } else { 1.0 / ratio };
+        if distance < best_distance {
+            best_distance = distance;
+            best_ratio = ratio;
+        }
+    }
+    best_ratio.clamp(0.8409, 1.1892) // ±3 semitones
 }
 
 /// Lowest and highest tagged roots for a kind within a source.

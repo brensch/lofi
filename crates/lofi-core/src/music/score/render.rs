@@ -75,11 +75,13 @@ fn kick(mesh_us: Micros, ctx: &ScoreCtx<'_>) -> f32 {
         } else {
             ctx.scene.kick_main
         }?;
+        // The kick is pitched to the session tonic: an untuned kick is the
+        // loudest note in the mix, playing in the wrong key.
         Some((
             event,
             Bind {
                 element,
-                rate: 1.0,
+                rate: ctx.scene.kick_rate,
                 midi: 0,
             },
         ))

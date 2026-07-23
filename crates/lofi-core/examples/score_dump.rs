@@ -27,10 +27,11 @@ fn main() {
 
     println!(
         "{{\"meta\":{{\"seed\":{seed},\"bpm_milli\":{bpm_milli},\"signature\":\"{}\",\
-         \"worst_repitch\":{:.2},\"drum_source\":{},\"bass_source\":{},\
+         \"worst_repitch\":{:.2},\"kick_rate\":{:.4},\"drum_source\":{},\"bass_source\":{},\
          \"keys_source\":{},\"lead_source\":{}}}}}",
         session.signature.name,
         scene.worst_repitch_semitones(),
+        scene.kick_rate,
         session.drum_source,
         session.bass_source,
         session.keys_source,

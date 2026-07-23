@@ -121,7 +121,7 @@ def structure(
     audio: np.ndarray, harmonic: np.ndarray, rate: int, bpm: float
 ) -> tuple[dict[str, float], np.ndarray]:
     hop = 512
-    chroma = librosa.feature.chroma_cqt(y=harmonic, sr=rate, hop_length=hop, fmin=110.0)
+    chroma = librosa.feature.chroma_cqt(y=harmonic, sr=rate, hop_length=hop, fmin=130.81)
     mfcc = librosa.feature.mfcc(y=audio, sr=rate, hop_length=hop, n_mfcc=13)[1:]
     _, beats = librosa.beat.beat_track(y=audio, sr=rate, hop_length=hop, start_bpm=bpm)
     if len(beats) < 8:
@@ -162,7 +162,9 @@ def analyze(path: str, bpm: float, out: Path) -> dict[str, object]:
     # Harmony metrics read the harmonic residue only: percussion and the
     # dominant sub-bass otherwise smear every pitch-class bin.
     harmonic = librosa.effects.harmonic(audio, margin=3.0)
-    chroma = librosa.feature.chroma_cqt(y=harmonic, sr=rate, hop_length=hop, fmin=110.0)
+    # fmin at C3 keeps kick and sub-bass harmonics from dominating the
+    # pitch-class picture the way they dominate the level picture.
+    chroma = librosa.feature.chroma_cqt(y=harmonic, sr=rate, hop_length=hop, fmin=130.81)
     centroid = librosa.feature.spectral_centroid(y=audio, sr=rate, hop_length=hop)
     onsets = librosa.onset.onset_detect(onset_envelope=onset_env, sr=rate, hop_length=hop)
     struct, ssm = structure(audio, harmonic, rate, bpm)

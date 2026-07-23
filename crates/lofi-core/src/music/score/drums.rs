@@ -107,10 +107,12 @@ pub fn snare_at(session: &Session, params: &Params, step: i64, step_us: i64) -> 
         });
     }
 
-    // Ghost notes: at most one seeded ghost per bar, never on the backbeat.
+    // Ghost notes: a consistent pocket, not a per-bar dice roll. The placement
+    // hashes the bar's position inside the four-bar cycle so the ghost lands
+    // in the same spot every cycle and reads as intent.
     if params.ghosts && !params.half_time {
-        let bar = step.div_euclid(STEPS_PER_BAR);
-        let h = super::event_hash(session.seed, 3, bar);
+        let cycle_bar = step.rem_euclid(STEPS_PER_CYCLE).div_euclid(STEPS_PER_BAR);
+        let h = super::event_hash(session.seed, 3, cycle_bar);
         if h.is_multiple_of(2) {
             let ghost_pos = [7, 10, 2, 15][(h >> 8) as usize % 4];
             if bar_pos == ghost_pos {

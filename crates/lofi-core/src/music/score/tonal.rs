@@ -31,15 +31,22 @@ fn micro(session: &Session, lane: u64, step: i64, step_us: i64) -> i64 {
 }
 
 /// The pitch class the bass targets at a grid hit, chosen from chord tones.
+///
+/// The choice hashes the position *within the four-bar cycle*, not the
+/// absolute bar: a bassline is a riff with an identity that repeats, and only
+/// the arrangement's `bass_shape` feature re-rolls it. Hashing absolute time
+/// here measurably destroyed the render's repetition structure.
 fn bass_pitch_class(session: &Session, params: &Params, step: i64) -> u8 {
     let bar = step.div_euclid(STEPS_PER_BAR);
     let bar_pos = step.rem_euclid(STEPS_PER_BAR);
+    let cycle_pos = step.rem_euclid(STEPS_PER_CYCLE);
     let chord = session.progression.slot_for_bar(bar).chord;
     let root = i32::from(chord.root);
     if bar_pos == 0 {
         return root.rem_euclid(12) as u8;
     }
-    let h = super::event_hash(session.seed, LANE_BASS ^ 0x5e1ec7, bar * 16 + bar_pos);
+    let riff = u64::from(params.bass_shape) << 32;
+    let h = super::event_hash(session.seed ^ riff, LANE_BASS ^ 0x5e1ec7, cycle_pos);
     let choice = h % if params.bass_busy { 5 } else { 4 };
     let interval = match choice {
         0 | 1 => 0,                 // restate the root
@@ -57,7 +64,8 @@ fn approach_pitch_class(session: &Session, step: i64) -> u8 {
     let key_root = i32::from(session.progression.scale_note(0));
     let below = snap_to_scale(next_root - 1, key_root, &scale_intervals(session));
     let above = snap_to_scale(next_root + 2, key_root, &scale_intervals(session));
-    let h = super::event_hash(session.seed, LANE_BASS ^ 0xa99, next_bar);
+    let cycle_bar = next_bar.rem_euclid(STEPS_PER_CYCLE / STEPS_PER_BAR);
+    let h = super::event_hash(session.seed, LANE_BASS ^ 0xa99, cycle_bar);
     let chosen = if h.is_multiple_of(3) { above } else { below };
     chosen.rem_euclid(12) as u8
 }
@@ -140,14 +148,18 @@ pub fn keys_at(
     let bar_pos = step.rem_euclid(STEPS_PER_BAR);
     let cycle_bar = bar.rem_euclid(4);
 
-    // Downbeat strike, or the anticipation push into the next chord.
-    let (slot_bar, strike_level) = if bar_pos == 0 {
+    // The comping pattern: a downbeat statement, a softer answer inside the
+    // bar (the motion real playing has), and an anticipation push into the
+    // next chord. `first_voice` trims the answer to the upper structure.
+    let (slot_bar, strike_level, first_voice) = if bar_pos == 0 {
         if params.keys_sparse && !matches!(cycle_bar, 0 | 2) {
             return out;
         }
-        (bar, 0.66)
+        (bar, 0.66, 0)
+    } else if bar_pos == 7 && !params.keys_sparse && matches!(cycle_bar, 0 | 2) {
+        (bar, 0.4, 1)
     } else if bar_pos == 14 && !params.keys_sparse && matches!(cycle_bar, 1 | 3) {
-        (bar + 1, 0.5)
+        (bar + 1, 0.5, 0)
     } else {
         return out;
     };
@@ -157,7 +169,12 @@ pub fn keys_at(
     let broken = params.keys_shape % 2 == 1;
     let voices = if params.rich_chords { 3 } else { 2 };
     let base_delay = micro(session, LANE_KEYS, step, step_us);
-    for (voice, entry) in out.iter_mut().enumerate().take(voices) {
+    for (voice, entry) in out
+        .iter_mut()
+        .enumerate()
+        .take(voices)
+        .skip(first_voice.min(voices.saturating_sub(1)))
+    {
         let roll = if broken { ROLL_US * voice as i64 } else { 0 };
         let top = voice + 1 == voices;
         *entry = Some(Event {

@@ -110,7 +110,9 @@ def check(meta: dict, events: list[dict]) -> list[str]:
     def phrase_signature(phrase: int, lane: str) -> frozenset:
         lo, hi = phrase * STEPS_PER_PHRASE, (phrase + 1) * STEPS_PER_PHRASE
         return frozenset(
-            (e["step"] - lo) for e in by_lane[lane] if lo <= e["step"] < hi
+            (e["step"] - lo, e.get("midi", e.get("bind")))
+            for e in by_lane[lane]
+            if lo <= e["step"] < hi
         )
 
     for phrase in range(phrases - 1):

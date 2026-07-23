@@ -9,7 +9,10 @@ use crate::music::theory::{Chord, ChordQuality, Voicing};
 use ChordQuality::*;
 
 /// Comfortable key roots (mid register); voicings re-octave around a center.
-const KEYS: [u8; 6] = [57, 50, 52, 48, 55, 45]; // A D E C G  A(low)
+/// The roots deliberately span flats and sharps: an all-natural list makes
+/// every session share overlapping pitch collections, which measurably
+/// flattened cross-seed variety.
+const KEYS: [u8; 8] = [57, 50, 46, 52, 48, 55, 53, 51]; // A D Bb E C G F Eb
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Mode {

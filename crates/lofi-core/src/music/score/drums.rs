@@ -162,9 +162,13 @@ pub fn hat_at(session: &Session, params: &Params, step: i64, step_us: i64) -> Op
     };
     let wobble = (super::event_hash(session.seed, 4, step) % 13) as f32 / 100.0;
     let level = if open { 1.15 } else { dip * (0.9 + wobble) } * signature.hat_gain;
-    let swing_extra = i64::from(params.swing_extra.min(10));
+    // "SwingHard" adds lean, but the total pocket is capped: past ~28 % of a
+    // step, a delayed hat stops sounding swung and starts sounding late.
+    let swing_total = (i64::from(signature.swing_percent) + i64::from(params.swing_extra))
+        .min(28)
+        - i64::from(signature.swing_percent);
     let extra_swing = if bar_pos.rem_euclid(4) == 2 {
-        step_us * swing_extra / 100
+        step_us * swing_total.max(0) / 100
     } else {
         0
     };

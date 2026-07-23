@@ -84,8 +84,12 @@ Audio should be I2S DMA into an external DAC. The render path should:
 For prototyping, `lofi-core::synth` renders into a caller-provided sample slice. Firmware can use the same shape for I2S DMA buffers.
 
 `lofi-core::groove` retains a no-sample reference path. The production music
-engine uses a hybrid approach: compact mu-law drum one-shots are decoded from
-flash while pitched parts remain procedural. Both paths are allocation-free.
+engine is the symbolic composer in `lofi-core::music::score`: every note is
+derived as data from `(seed, roster, mesh tick)` and voiced through root-tagged
+mu-law one-shots decoded from flash. The prior loop-scene engine remains
+selectable for A/B listening studies. Both paths are allocation-free, and the
+symbolic score is dumpable as JSONL for property testing without listening
+(see [Symbolic Music](docs/SYMBOLIC_MUSIC.md)).
 
 ## Hard Truths
 

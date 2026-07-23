@@ -8,6 +8,12 @@ The prior one-shot compositor is explicitly rejected. User listening reported
 that it sounded bad even though a genre classifier called it lo-fi. Human
 rejection overrides every automated score.
 
+That failure reshaped the QA philosophy: classifier probability is no longer
+treated as evidence of quality. The symbolic engine is instead gated by
+instruments that measure craft directly — property gates over the exact
+symbolic score, and audio features compared against approved references. See
+[Symbolic engine QA](#symbolic-engine-qa) below.
+
 The current candidate uses source-coherent, grid-conformed stem scenes,
 transient-bounded drum hits, and deterministic eight-bar phrase evolution. On
 2026-07-16, seeds `0`, `1`, and `2` were each rendered for 96 seconds with five
@@ -44,6 +50,37 @@ construction kit; its stem sum correlates 0.9998 with the published full mix,
 avoiding source-separation residue. An earlier cadence failed the final phrase
 window and was revised; an underperforming harmony-only scene was removed from
 automatic selection.
+
+## Symbolic engine QA
+
+The symbolic composer is inspectable without ears, so its gates run in the
+symbolic domain first and the audio domain second:
+
+```sh
+# 1. The exact score as data: every note, velocity, and micro-delay.
+cargo run -p lofi-core --example score_dump -- <seed> 4 78000 > score.jsonl
+
+# 2. Property gates that name the failing bar and lane: backbeat integrity,
+#    chord-root basslines, diatonic approach tones, rest ratios, register
+#    separation, phrase evolution, pocket bounds, repitch limits.
+tools/listen-qa/symbolic_gates.py score.jsonl
+
+# 3. The browser-path render, measured: swing, rest ratio, scale consistency,
+#    band balance, four-bar repetition stripe, beat novelty — plus a visual
+#    report (mel spectrogram, self-similarity matrix, chromagram, onsets).
+tools/listen-qa/scorecard.py analyze mix.wav --bpm 78 --out report/
+
+# 4. Distance from the approved-reference corpus, and craft windows.
+tools/listen-qa/scorecard.py compare report/features.json corpus.json
+
+# The overnight driver runs all of the above per seed and ranks survivors.
+tools/listen-qa/candidates.py --seeds 0,1,2,... --corpus corpus.json
+```
+
+A symbolic candidate reaches the judge deck only when the property gates all
+hold, every craft window is met, and its corpus distance is comparable to the
+loop engine's own renders. Human listening on `/judge` remains the final
+authority; the deck now runs both engines blind, alternating between them.
 
 ## Reproduction
 

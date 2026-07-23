@@ -51,13 +51,15 @@ This executes the production AudioWorklet and one WASM instance per module,
 including the simulated mesh substrate and browser listener mix. See
 [Listen QA](docs/LISTEN_QA.md) for the automated and human acceptance gates.
 
-The current groove is sample-only. A fixed 5.95 MiB pack supplies 192 harvested
-elements. The audible path selects one source-coherent scene per session and
-deals source-matched, transient-bounded drum one-shots plus grid-conformed bass,
-harmony, melody, and texture loops across modules. A bounded deterministic
-arrangement changes rhythm density and stem prominence every eight bars.
-No oscillator, unrelated sample shuffle, allocator, or mutable playback cursor
-runs in the audio path.
+The default groove is **symbolic**: every note and hit exists as data — lane,
+step, pitch, velocity, micro-delay — derived from `(seed, roster, mesh time)`
+before it touches a sample. Root-tagged one-shots from the fixed 5.95 MiB pack
+supply timbre only; harmony, basslines, comping, and motifs come from the
+`no_std` composer described in [Symbolic Music](docs/SYMBOLIC_MUSIC.md). The
+prior loop engine (source-coherent stem scenes) remains selectable for blinded
+A/B listening studies. No oscillator, allocator, or mutable playback cursor
+runs in the audio path, and the exact score of any session is dumpable as
+JSONL for property testing without listening.
 
 ## Hardware Direction
 
@@ -77,6 +79,7 @@ Next hardware milestones:
 - [Product Notes](docs/PRODUCT.md)
 - [Mesh Sync](docs/MESH_SYNC.md)
 - [Hardware Portability](docs/HARDWARE_PORTABILITY.md)
+- [Symbolic Music](docs/SYMBOLIC_MUSIC.md)
 - [Music Engine](docs/MUSIC_ENGINE.md)
 - [Listen QA](docs/LISTEN_QA.md)
 - [AI Content Pipeline](docs/AI_CONTENT_PIPELINE.md)

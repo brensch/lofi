@@ -27,10 +27,15 @@ every module's mesh state, callback cadence, frame gaps, output discontinuities,
 and clipping counters. It requests worklet state only when pressed and copies a
 formatted JSON report suitable for attaching to a playback issue.
 
-Candidates come from a shuffled, curated profile deck. Catalog analysis groups
-the two perceptually similar 80 BPM sources together, so consecutive trials must
-cross between that group and the distinct 72 BPM source as well as changing
-rhythmic family. Across the deck, the engine compares half-time, double and
+Candidates come from a shuffled, curated profile deck spanning **both music
+engines**: loop-scene candidates and symbolic-composer candidates that passed
+every property gate and craft window in the overnight sweep
+(`tools/listen-qa/candidates.py`). Symbolic profiles share one contrast group,
+so consecutive trials always cross between the engines — every session is a
+blind head-to-head. `node tools/judgement-report.mjs` reports the per-engine
+like rates. Catalog analysis groups the two perceptually similar 80 BPM loop
+sources together, so consecutive trials must also cross between that group and
+the distinct 72 BPM source as well as changing rhythmic family. Across the deck, the engine compares half-time, double and
 sparse hats, open-hat pockets, kick variants, fills, swing, tone profiles,
 groove signatures, sampled bass-walk spotlights, and arrangement phases. The UI
 hides seed and profile data before the vote to avoid expectation bias.
@@ -49,9 +54,10 @@ Record IDs are idempotent. Retrying after a lost response cannot duplicate a
 vote. Pending local records retry when the page next opens, and the Export
 button provides a JSON backup.
 
-Each record includes the build revision, seed, profile ID, source slot, starting
-phrase, tempo, sample rate, sequence, module count, duration, verdict, tags,
-note, replay count, decision time, and actual listening duration. Build revision,
+Each record includes the build revision, engine, seed, profile ID, source
+slot, starting phrase, tempo, sample rate, sequence, module count, duration,
+verdict, tags, note, replay count, decision time, and actual listening
+duration. Build revision,
 seed, starting phrase, and tempo reproduce a candidate from the matching
 catalogue and engine source.
 

@@ -1,8 +1,14 @@
-# Music Engine
+# Music Engine (loop scenes)
 
-## Current Contract
+> **Status**: the loop engine documented here is no longer the product
+> default. The audible path is the symbolic composer described in
+> [Symbolic Music](SYMBOLIC_MUSIC.md); this engine remains selectable
+> (`Engine::Loops`, `--engine loops`, judge-deck profiles) for blinded A/B
+> listening studies against it.
 
-The runtime plays coherent sampled scenes on a shared mesh timeline:
+## Contract
+
+The loop engine plays coherent sampled scenes on a shared mesh timeline:
 
 ```text
 audible output = f(scene seed, assigned role plan, mesh time)

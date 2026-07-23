@@ -37,6 +37,15 @@ process.stdout.write("Lofi listening study\n");
 process.stdout.write(`Judgements: ${values.length} | liked: ${likes.length} (${percent(likes.length, values.length)}) | disliked: ${dislikes.length}\n`);
 process.stdout.write(`Full listens: ${values.reduce((sum, record) => sum + 1 + (record.replayCount ?? 0), 0)} | notes: ${values.filter((record) => record.note).length}\n`);
 
+// The head-to-head that decides the engine question.
+for (const engine of ["symbolic", "loops"]) {
+  const group = values.filter((record) => (record.candidate.engine ?? "loops") === engine);
+  const groupLikes = group.filter((record) => record.verdict === "like").length;
+  process.stdout.write(
+    `Engine ${engine}: ${group.length} judgements, ${groupLikes} liked (${percent(groupLikes, group.length)})\n`,
+  );
+}
+
 if (tagStats.size) {
   process.stdout.write("\nTag signal\n");
   const sortedTags = [...tagStats.entries()].sort((left, right) => right[1].total - left[1].total);

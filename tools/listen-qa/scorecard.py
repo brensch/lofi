@@ -93,6 +93,36 @@ def band_energy(audio: np.ndarray, rate: int) -> dict[str, float]:
     }
 
 
+def duck_depth(audio: np.ndarray, rate: int) -> float:
+    """How much the mid band dips right after low-band (kick) onsets.
+
+    Positive values mean the mix breathes with the kick (sidechain glue);
+    ~0 means the lanes ignore each other.
+    """
+    from scipy.signal import butter, sosfilt
+
+    low = sosfilt(butter(4, [35, 120], "bandpass", fs=rate, output="sos"), audio)
+    mid = sosfilt(butter(4, [350, 2500], "bandpass", fs=rate, output="sos"), audio)
+    frame = int(rate * 0.01)
+    frames = len(audio) // frame
+    low_env = np.abs(low[: frames * frame]).reshape(-1, frame).mean(axis=1)
+    mid_env = np.abs(mid[: frames * frame]).reshape(-1, frame).mean(axis=1)
+    threshold = np.percentile(low_env, 92)
+    onsets = [
+        i for i in range(2, frames - 40)
+        if low_env[i] > threshold and low_env[i] > 1.6 * low_env[i - 2]
+    ]
+    if len(onsets) < 8:
+        return 0.0
+    dips = []
+    for i in onsets:
+        ducked = mid_env[i + 2 : i + 12].mean()  # 20-120 ms after the hit
+        recovered = mid_env[i + 25 : i + 40].mean()  # 250-400 ms after
+        if recovered > 1e-7:
+            dips.append(1.0 - ducked / recovered)
+    return float(np.median(dips)) if dips else 0.0
+
+
 def phrase_windows(audio: np.ndarray, rate: int, seconds: float) -> dict[str, object]:
     frames = int(seconds * rate)
     windows = []
@@ -178,6 +208,7 @@ def analyze(path: str, bpm: float, out: Path) -> dict[str, object]:
         "onsets_per_second": len(onsets) * rate / hop / max(len(onset_env), 1),
         "swing": swing_ratio(onset_env, rate, hop, bpm),
         "rest_ratio": rest_ratio(audio, rate),
+        "duck_depth": duck_depth(audio, rate),
         "scale_consistency": scale_consistency(chroma),
         "chroma_entropy": chroma_entropy(chroma),
         "spectral_centroid_hz": float(centroid.mean()),

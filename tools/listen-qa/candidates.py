@@ -29,8 +29,12 @@ CRAFT_WINDOWS = {
     "rest_ratio": (0.02, 0.30),
     "scale_consistency": (0.60, 1.01),
     "structure_cycle_stripe": (0.10, 1.0),
-    "structure_novelty_mean": (0.25, 0.75),
+    "structure_novelty_mean": (0.22, 0.75),
     "onsets_per_second": (1.8, 4.5),
+    # Production glue: the mix must breathe with the kick, and the low end
+    # must leave room for everything that is not the low end.
+    "duck_depth": (0.08, 0.8),
+    "band_low": (0.50, 0.84),
 }
 
 
@@ -84,7 +88,7 @@ def evaluate_seed(seed: int, bpm: int, corpus: str | None, phrases: int, duratio
         for key in (
             "rms_dbfs", "swing", "rest_ratio", "scale_consistency", "onsets_per_second",
             "structure_cycle_stripe", "structure_novelty_mean", "structure_repetition_lag_beats",
-            "band_low", "spectral_centroid_hz",
+            "band_low", "band_mid", "duck_depth", "spectral_centroid_hz",
         )
     }
 

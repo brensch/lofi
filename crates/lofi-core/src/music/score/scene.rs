@@ -165,9 +165,9 @@ fn lead_table(catalog: &'static PackedCatalog, session: &Session) -> [Option<Bin
     for (index, entry) in table.iter_mut().enumerate() {
         let degree = index as i8 - 2;
         let mut midi = session.progression.scale_note(degree) as i32;
-        // The pack's lead roots sit below the default lead register; fold the
-        // line down toward them so repitch stays gentle.
-        while midi > 64 {
+        // Fold toward the sampled lead roots, but keep the line above the
+        // keys shells: a melody buried inside the chord register vanishes.
+        while midi > 66 {
             midi -= 12;
         }
         *entry = bind_nearest(
@@ -329,7 +329,12 @@ fn kick_tuning(element: &PackedElement, session: &Session) -> f32 {
             best_ratio = ratio;
         }
     }
-    best_ratio.clamp(0.8409, 1.1892) // ±3 semitones
+    // Tune only when the tonic is actually reachable: a clamped shift lands
+    // on a different wrong pitch, lower — worse than leaving the kick alone.
+    if !(0.8409..=1.1892).contains(&best_ratio) {
+        return 1.0;
+    }
+    best_ratio
 }
 
 /// Lowest and highest tagged roots for a kind within a source.

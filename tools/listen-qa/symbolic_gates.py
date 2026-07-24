@@ -131,6 +131,20 @@ def check(meta: dict, events: list[dict]) -> list[str]:
                 f"{lane} level {event['level']} out of range at step {event['step']}",
             )
 
+    # 8b. Direction: on the first beat of a bar the lead lands on a chord
+    #     tone. Scale membership alone reads as aimless noodling.
+    strong = [
+        e for e in by_lane["lead"]
+        if e["bar_pos"] < 4 and e.get("midi") and e.get("chord_pcs")
+    ]
+    if strong:
+        on_chord = sum(e["midi"] % 12 in e["chord_pcs"] for e in strong)
+        gate(
+            failures,
+            on_chord >= 0.7 * len(strong),
+            f"lead hits chord tones on only {on_chord}/{len(strong)} strong beats",
+        )
+
     # 9. Micro-timing: swing is a ratio of the step, so the pocket budget is
     #    tempo-relative — swing plus lane delay plus humanize within ~1/3 step.
     bpm_milli = int(meta.get("bpm_milli", 78_000))

@@ -60,11 +60,43 @@ pub fn render_role(role: Role, mesh_us: Micros, ctx: &ScoreCtx<'_>) -> f32 {
     let value = match role {
         Role::Pulse => kick(mesh_us, ctx),
         Role::Pocket => snare(mesh_us, ctx) + hats(mesh_us, ctx),
-        Role::Low => bass(mesh_us, ctx),
-        Role::Color => keys(mesh_us, ctx),
-        Role::Motif => lead(mesh_us, ctx),
+        Role::Low => bass(mesh_us, ctx) * duck_gain(mesh_us, ctx, 0.52),
+        Role::Color => keys(mesh_us, ctx) * duck_gain(mesh_us, ctx, 0.42),
+        Role::Motif => lead(mesh_us, ctx) * duck_gain(mesh_us, ctx, 0.34),
     };
     value * level
+}
+
+/// Mesh-wide sidechain without any traffic: the kick is symbolic and
+/// deterministic, so every box — including ones not playing the kick — ducks
+/// its tonal lanes under the exact same virtual hit. The pump is what makes
+/// separate lanes breathe as one record.
+fn duck_gain(mesh_us: Micros, ctx: &ScoreCtx<'_>, depth: f32) -> f32 {
+    let current_step = current_step(mesh_us, ctx);
+    for back in 0..DRUM_LOOKBACK {
+        let step = current_step - back;
+        let Some(event) = drums::kick_at(ctx.session, ctx.params_at(step), step, ctx.step_us())
+        else {
+            continue;
+        };
+        let onset = ctx
+            .transport
+            .root_time_for_tick(step * TICKS_PER_STEP)
+            .saturating_add(event.delay_us);
+        if mesh_us < onset {
+            continue;
+        }
+        let age = mesh_us.saturating_sub(onset) as f32 / 1_000_000.0;
+        if age > 0.35 {
+            break;
+        }
+        // An 8 ms ease-in avoids clicking the tonal tails, then a ~140 ms
+        // recovery gives the classic pocket pump.
+        let ramp = (age / 0.008).min(1.0);
+        let decay = libm::expf(-(age - 0.008).max(0.0) / 0.14);
+        return 1.0 - depth * ramp * decay;
+    }
+    1.0
 }
 
 fn kick(mesh_us: Micros, ctx: &ScoreCtx<'_>) -> f32 {
@@ -147,7 +179,14 @@ fn keys(mesh_us: Micros, ctx: &ScoreCtx<'_>) -> f32 {
             let Some(bind) = ctx.scene.keys[slot.min(3)][voice] else {
                 continue;
             };
-            sum += voice_sample(mesh_us, ctx, step, *event, bind, warble);
+            // Doubled with a light detune: one dry harvested note reads as a
+            // ringtone; two slightly split copies read as an instrument.
+            sum += voice_sample(mesh_us, ctx, step, *event, bind, warble) * 0.6;
+            let detuned = Bind {
+                rate: bind.rate * 1.0045,
+                ..bind
+            };
+            sum += voice_sample(mesh_us, ctx, step, *event, detuned, warble) * 0.45;
         }
     }
     sum
@@ -222,16 +261,19 @@ fn role_level(role: Role, mesh_us: Micros, ctx: &ScoreCtx<'_>) -> f32 {
 fn level_for(role: Role, params: &Params, phrase: i64) -> f32 {
     let arc = phrase.rem_euclid(4) as usize;
     match role {
-        Role::Pulse => [0.84, 0.88, 0.92, 0.82][arc],
+        Role::Pulse => [0.82, 0.86, 0.9, 0.79][arc],
         Role::Pocket => [0.86, 0.96, 1.0, 0.82][arc],
-        Role::Low => [0.82, 0.88, 0.92, 0.78][arc],
+        // The low end cedes real room: the first renders measured 85 %+ of
+        // the energy below 150 Hz with the harmony nearly inaudible, so the
+        // tonal lanes are pushed until the mid band actually registers.
+        Role::Low => [0.66, 0.70, 0.74, 0.62][arc],
         Role::Color => {
-            let base = [0.56, 0.62, 0.66, 0.5][arc];
-            base - if params.keys_sparse { 0.08 } else { 0.0 }
+            let base = [1.05, 1.15, 1.25, 0.95][arc];
+            base - if params.keys_sparse { 0.12 } else { 0.0 }
         }
         Role::Motif => {
             if params.lead_on {
-                [0.3, 0.55, 0.66, 0.42][arc]
+                [0.6, 0.95, 1.1, 0.78][arc]
             } else {
                 0.0
             }

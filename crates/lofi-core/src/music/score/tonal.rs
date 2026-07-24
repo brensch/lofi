@@ -70,6 +70,33 @@ fn approach_pitch_class(session: &Session, step: i64) -> u8 {
     chosen.rem_euclid(12) as u8
 }
 
+/// The nearest scale degree (within ±2 of `degree`) whose pitch class is a
+/// tone of the bar's chord; `degree` unchanged when none is that close.
+fn chord_tone_degree(session: &Session, bar: i64, degree: i32) -> i32 {
+    let chord = session.progression.slot_for_bar(bar).chord;
+    let root = i32::from(chord.root);
+    let tones = [
+        root.rem_euclid(12),
+        (root + chord.quality.third()).rem_euclid(12),
+        (root + chord.quality.fifth()).rem_euclid(12),
+        (root + chord.quality.seventh()).rem_euclid(12),
+    ];
+    let pc = |candidate: i32| {
+        i32::from(
+            session
+                .progression
+                .scale_note(candidate.clamp(-16, 16) as i8),
+        )
+        .rem_euclid(12)
+    };
+    for offset in [0, -1, 1, -2, 2] {
+        if tones.contains(&pc(degree + offset)) {
+            return degree + offset;
+        }
+    }
+    degree
+}
+
 /// The session scale as semitone intervals, recovered from the progression.
 fn scale_intervals(session: &Session) -> [i32; 7] {
     let tonic = i32::from(session.progression.scale_note(0));
@@ -216,7 +243,13 @@ pub fn lead_at(session: &Session, params: &Params, step: i64, step_us: i64) -> O
         [1, -1]
     };
     let transpose = options[(super::event_hash(session.seed, LANE_LEAD, phrase) % 2) as usize];
-    let degree = i32::from(event.degree) + transpose;
+    let mut degree = i32::from(event.degree) + transpose;
+    // On the first beat of a bar the melody lands on a chord tone. Being in
+    // the scale is not enough: a line that ignores the changes underneath it
+    // is aimless. Off the strong beat the motif contour is free.
+    if step.rem_euclid(STEPS_PER_BAR) < 4 {
+        degree = chord_tone_degree(session, step.div_euclid(STEPS_PER_BAR), degree);
+    }
     let bind = (degree + 2).clamp(0, super::scene::LEAD_DEGREES as i32 - 1) as u8;
     Some(Event {
         bind,

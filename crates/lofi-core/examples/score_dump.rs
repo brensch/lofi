@@ -52,7 +52,7 @@ fn main() {
                 u32::from(event.bind),
                 event.level,
                 event.delay_us,
-                chord.root,
+                chord,
             );
         }
         if let Some(event) = drums::snare_at(&session, &params, step, step_us) {
@@ -63,7 +63,7 @@ fn main() {
                 u32::from(event.bind),
                 event.level,
                 event.delay_us,
-                chord.root,
+                chord,
             );
         }
         if let Some(event) = drums::hat_at(&session, &params, step, step_us) {
@@ -74,7 +74,7 @@ fn main() {
                 u32::from(event.bind),
                 event.level,
                 event.delay_us,
-                chord.root,
+                chord,
             );
         }
         if let Some(event) = tonal::bass_at(&session, &params, step, step_us) {
@@ -88,7 +88,7 @@ fn main() {
                 midi,
                 event.level,
                 event.delay_us,
-                chord.root,
+                chord,
             );
         }
         for event in tonal::keys_at(&session, &params, step, step_us)
@@ -105,7 +105,7 @@ fn main() {
                 midi,
                 event.level,
                 event.delay_us,
-                chord.root,
+                chord,
             );
         }
         if let Some(event) = tonal::lead_at(&session, &params, step, step_us) {
@@ -119,17 +119,26 @@ fn main() {
                 midi,
                 event.level,
                 event.delay_us,
-                chord.root,
+                chord,
             );
         }
     }
 }
 
-fn row(lane: &str, step: i64, phrase: i64, bind: u32, level: f32, delay_us: i64, chord_root: u8) {
+fn row(
+    lane: &str,
+    step: i64,
+    phrase: i64,
+    bind: u32,
+    level: f32,
+    delay_us: i64,
+    chord: lofi_core::music::theory::Chord,
+) {
     println!(
         "{{\"lane\":\"{lane}\",\"step\":{step},\"bar_pos\":{},\"phrase\":{phrase},\
-         \"bind\":{bind},\"level\":{level:.3},\"delay_us\":{delay_us},\"chord_root\":{chord_root}}}",
-        step.rem_euclid(STEPS_PER_BAR)
+         \"bind\":{bind},\"level\":{level:.3},\"delay_us\":{delay_us},\"chord_root\":{}}}",
+        step.rem_euclid(STEPS_PER_BAR),
+        chord.root,
     );
 }
 
@@ -140,11 +149,18 @@ fn pitched(
     midi: u8,
     level: f32,
     delay_us: i64,
-    chord_root: u8,
+    chord: lofi_core::music::theory::Chord,
 ) {
+    let root = i32::from(chord.root);
     println!(
         "{{\"lane\":\"{lane}\",\"step\":{step},\"bar_pos\":{},\"phrase\":{phrase},\
-         \"midi\":{midi},\"level\":{level:.3},\"delay_us\":{delay_us},\"chord_root\":{chord_root}}}",
-        step.rem_euclid(STEPS_PER_BAR)
+         \"midi\":{midi},\"level\":{level:.3},\"delay_us\":{delay_us},\"chord_root\":{},\
+         \"chord_pcs\":[{},{},{},{}]}}",
+        step.rem_euclid(STEPS_PER_BAR),
+        chord.root,
+        root.rem_euclid(12),
+        (root + chord.quality.third()).rem_euclid(12),
+        (root + chord.quality.fifth()).rem_euclid(12),
+        (root + chord.quality.seventh()).rem_euclid(12),
     );
 }

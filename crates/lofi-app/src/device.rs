@@ -2,6 +2,7 @@ use lofi_core::event::{EventQueue, ScheduledEvent, Section};
 use lofi_core::mesh::wire::MeshMessage;
 use lofi_core::mesh::{SyncEngine, SyncQuality};
 use lofi_core::music::arrangement::{Arrangement, Role, RolePlan, BARS_PER_PHRASE, ROLES};
+use lofi_core::music::fx::{Glue, Highpass};
 use lofi_core::music::kit::kit_for;
 use lofi_core::music::score::{self, ScoreCtx};
 use lofi_core::music::{
@@ -20,6 +21,9 @@ const TICKS_PER_BAR: i64 = 384;
 /// Master lowpass cutoff — rolls off the highs for the lofi tone.
 const LOWPASS_HZ: f32 = 3_600.0;
 const BASS_LOWPASS_HZ: f32 = 460.0;
+/// Carve the harmony and lead out of the kick/bass zone (symbolic engine).
+const COLOR_HIGHPASS_HZ: f32 = 130.0;
+const MOTIF_HIGHPASS_HZ: f32 = 140.0;
 /// Peak headroom when converting the f32 mix to i16.
 const OUTPUT_AMPLITUDE: f32 = 18_000.0;
 
@@ -85,6 +89,9 @@ pub struct Device {
     bass_flourish: Option<lofi_core::music::PackedElement>,
     lowpass: Lowpass,
     bass_lowpass: Lowpass,
+    color_highpass: Highpass,
+    motif_highpass: Highpass,
+    glue: Glue,
     lowpass_cutoff_hz: f32,
 }
 
@@ -112,6 +119,9 @@ impl Device {
             bass_flourish: None,
             lowpass: Lowpass::new(LOWPASS_HZ, DEFAULT_SAMPLE_RATE, 0.707),
             bass_lowpass: Lowpass::new(BASS_LOWPASS_HZ, DEFAULT_SAMPLE_RATE, 0.707),
+            color_highpass: Highpass::new(COLOR_HIGHPASS_HZ, DEFAULT_SAMPLE_RATE, 0.707),
+            motif_highpass: Highpass::new(MOTIF_HIGHPASS_HZ, DEFAULT_SAMPLE_RATE, 0.707),
+            glue: Glue::new(DEFAULT_SAMPLE_RATE),
             lowpass_cutoff_hz: LOWPASS_HZ,
         }
     }
@@ -120,6 +130,9 @@ impl Device {
         self.sample_rate = sample_rate.max(1);
         self.lowpass = Lowpass::new(self.lowpass_cutoff_hz, self.sample_rate, 0.707);
         self.bass_lowpass = Lowpass::new(BASS_LOWPASS_HZ, self.sample_rate, 0.707);
+        self.color_highpass = Highpass::new(COLOR_HIGHPASS_HZ, self.sample_rate, 0.707);
+        self.motif_highpass = Highpass::new(MOTIF_HIGHPASS_HZ, self.sample_rate, 0.707);
+        self.glue = Glue::new(self.sample_rate);
         self
     }
 
@@ -227,6 +240,9 @@ impl Device {
             }
             self.lowpass.reset();
             self.bass_lowpass.reset();
+            self.color_highpass.reset();
+            self.motif_highpass.reset();
+            self.glue.reset();
             return;
         }
 
@@ -296,14 +312,26 @@ impl Device {
                         Engine::Symbolic => score::render_role(role, mesh_us, &score_ctx),
                         Engine::Loops => render_role(role, mesh_us, ctx),
                     };
-                    dry += if role == Role::Low {
-                        self.bass_lowpass.process(contribution)
-                    } else {
-                        contribution
+                    dry += match role {
+                        Role::Low => self.bass_lowpass.process(contribution),
+                        // Carving only applies to the symbolic composer; the
+                        // loop stems were mixed at the source.
+                        Role::Color if self.music_engine == Engine::Symbolic => {
+                            self.color_highpass.process(contribution)
+                        }
+                        Role::Motif if self.music_engine == Engine::Symbolic => {
+                            self.motif_highpass.process(contribution)
+                        }
+                        _ => contribution,
                     };
                 }
             }
-            let colored = color(dry * output_trim, mesh_us, self.sample_rate, tone);
+            let glued = if self.music_engine == Engine::Symbolic {
+                self.glue.process(dry)
+            } else {
+                dry
+            };
+            let colored = color(glued * output_trim, mesh_us, self.sample_rate, tone);
             let wet = self.lowpass.process(colored);
             *sample = (wet * OUTPUT_AMPLITUDE).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
         }

@@ -22,13 +22,11 @@ interface CandidateProfile {
 // so consecutive symbolic trials change rhythmic identity.
 const SYMBOLIC_PROFILES: CandidateProfile[] = [
   { id: "s-window-6", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 0, seed: 6, startPhrase: 1, bpm: 78 },
-  { id: "s-polar-2", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 1, seed: 2, startPhrase: 2, bpm: 78 },
-  { id: "s-polar-17", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 2, seed: 17, startPhrase: 1, bpm: 80 },
-  { id: "s-window-13", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 3, seed: 13, startPhrase: 2, bpm: 76 },
-  { id: "s-polar-42", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 0, seed: 42, startPhrase: 5, bpm: 74 },
-  { id: "s-window-26", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 1, seed: 26, startPhrase: 1, bpm: 82 },
-  { id: "s-float-19", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 2, seed: 19, startPhrase: 2, bpm: 76 },
-  { id: "s-window-31", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 3, seed: 31, startPhrase: 6, bpm: 72 },
+  { id: "s-window-10", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 1, seed: 10, startPhrase: 2, bpm: 76 },
+  { id: "s-window-45", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 2, seed: 45, startPhrase: 1, bpm: 80 },
+  { id: "s-float-19", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 3, seed: 19, startPhrase: 2, bpm: 76 },
+  { id: "s-polar-39", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 0, seed: 39, startPhrase: 5, bpm: 74 },
+  { id: "s-window-24", engine: "symbolic", sourceSlot: 8, contrastGroup: 2, family: 1, seed: 24, startPhrase: 1, bpm: 72 },
 ];
 
 // Loop seeds are chosen against catalog.pack so each source covers sharply
